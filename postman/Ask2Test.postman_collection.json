@@ -6,10 +6,103 @@
   },
   "item": [
     {
-      "name": "Quiz Operations",
+      "name": "System",
       "item": [
         {
-          "name": "1. Get Quiz by Topic (JavaScript Promises)",
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Check if the API is running properly"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Quiz Generation",
+      "item": [
+        {
+          "name": "Generate Quiz",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/generate-quiz",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "generate-quiz"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topic\": \"JavaScript Promises\",\n  \"config\": {\n    \"multipleChoiceCount\": 5,\n    \"codingQuestionCount\": 2,\n    \"difficultyDistribution\": {\n      \"basic\": 0.3,\n      \"intermediate\": 0.5,\n      \"advanced\": 0.2\n    },\n    \"includeHints\": true,\n    \"maxAttempts\": 3\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Generate a new quiz with specific configurations"
+          },
+          "response": []
+        },
+        {
+          "name": "Evaluate Quiz",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/evaluate-quiz",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "evaluate-quiz"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quizId\": \"{{quizId}}\",\n  \"topic\": \"JavaScript Promises\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Evaluate an existing quiz"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Quiz Retrieval",
+      "item": [
+        {
+          "name": "Get All Quizzes",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes"]
+            },
+            "description": "Get a list of all quizzes"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Quiz by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/{{quizId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "{{quizId}}"]
+            },
+            "description": "Get a specific quiz by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Quizzes by Topic",
           "request": {
             "method": "GET",
             "url": {
@@ -17,41 +110,23 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "quizzes", "topic", "JavaScript Promises"]
             },
-            "description": "Get quiz for JavaScript Promises - will return from cache if exists, otherwise generate new"
+            "description": "Get quizzes for a specific topic - will return from cache if exists"
           },
           "response": []
         },
         {
-          "name": "2. Get Quiz by Topic (JavaScript Async/Await)",
+          "name": "Get Quizzes by Subtopic",
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{baseUrl}}/api/quizzes/topic/JavaScript Async/Await",
+              "raw": "{{baseUrl}}/api/quizzes/subtopic/Async Functions",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "quizzes", "topic", "JavaScript Async/Await"]
+              "path": ["api", "quizzes", "subtopic", "Async Functions"]
             },
-            "description": "Get quiz for Async/Await - will return from cache if exists, otherwise generate new"
+            "description": "Get quizzes for a specific subtopic"
           },
           "response": []
         },
-        {
-          "name": "3. Get Quiz by Topic (React Hooks)",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/quizzes/topic/React Hooks",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "quizzes", "topic", "React Hooks"]
-            },
-            "description": "Get quiz for React Hooks - will return from cache if exists, otherwise generate new"
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "History Operations",
-      "item": [
         {
           "name": "Get Topic History",
           "request": {
@@ -61,7 +136,51 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "quizzes", "history", "JavaScript"]
             },
-            "description": "Get quiz generation history for JavaScript topics"
+            "description": "Get quiz generation history for a specific topic"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Example Topics",
+      "item": [
+        {
+          "name": "JavaScript Promises Quiz",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/topic/JavaScript Promises",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "topic", "JavaScript Promises"]
+            },
+            "description": "Get quiz for JavaScript Promises"
+          },
+          "response": []
+        },
+        {
+          "name": "JavaScript Async/Await Quiz",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/topic/JavaScript Async/Await",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "topic", "JavaScript Async/Await"]
+            },
+            "description": "Get quiz for Async/Await"
+          },
+          "response": []
+        },
+        {
+          "name": "React Hooks Quiz",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/topic/React Hooks",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "topic", "React Hooks"]
+            },
+            "description": "Get quiz for React Hooks"
           },
           "response": []
         }
