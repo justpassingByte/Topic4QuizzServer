@@ -329,120 +329,38 @@ try {
 
 ## Environment Setup
 
-To run the application, you need to set up your environment variables. Create a `.env` file in the root directory of the project.
-
-### Required Environment Variables
+Create a `.env` file in the root directory with the following variables:
 
 ```env
+# API Keys
+
+
+OPENAI_API_KEY=your-openai-key
+HUGGINGFACE_API_KEY=your-huggingface-key
+SERPER_API_KEY=your-serper-key
+
+# MongoDB Configuration
+MONGODB_URI=your-mongodb-connection-string
+
 # Server Configuration
 PORT=3000
-NODE_ENV=development
 
-# Database Configuration
-MONGODB_URI=mongodb://localhost:27017/ask2test
-DB_NAME=ask2test
-
-# API Keys and External Services
-OPENAI_API_KEY=your_openai_api_key
-GOOGLE_SEARCH_API_KEY=your_google_api_key
-GOOGLE_SEARCH_ENGINE_ID=your_search_engine_id
-
-# Security
-JWT_SECRET=your_jwt_secret_key
-JWT_EXPIRES_IN=24h
-
-# Optional Features
-ENABLE_CACHE=true
-CACHE_TTL=3600
-MAX_REQUESTS_PER_MINUTE=100
+# Rate Limiting
+RATE_LIMIT_WINDOW=60000  # 1 minute in milliseconds
+MAX_REQUESTS_PER_WINDOW=50
 ```
 
-### Environment Files
-
-The system supports different environment files for different deployment stages:
-- `.env`: Default environment variables
-- `.env.local`: Local development overrides (not committed to git)
-- `.env.development`: Development environment settings
-- `.env.production`: Production environment settings
-- `.env.test`: Test environment settings
-
-### Setting Up Environment Variables
-
-1. Copy the example environment file:
+### Quick Start
+1. Copy `.env.example` to `.env`:
    ```bash
    cp .env.example .env
    ```
 
-2. Edit the `.env` file with your specific configuration:
-   ```bash
-   # Using your default editor
-   nano .env
-   # Or
-   code .env
-   ```
+2. Update the `.env` file with your API keys and configuration
 
-3. Ensure all required variables are set:
-   ```bash
-   # Check if all required variables are set
-   npm run check-env
-   ```
+3. Never commit your `.env` file to version control
 
-### Environment Variables Description
-
-#### Server Configuration
-- `PORT`: The port number for the server (default: 3000)
-- `NODE_ENV`: Current environment (development/production/test)
-
-#### Database Configuration
-- `MONGODB_URI`: MongoDB connection string
-- `DB_NAME`: Database name for the application
-
-#### API Keys
-- `OPENAI_API_KEY`: OpenAI API key for AI features
-- `GOOGLE_SEARCH_API_KEY`: Google API key for search functionality
-- `GOOGLE_SEARCH_ENGINE_ID`: Google Custom Search Engine ID
-
-#### Security
-- `JWT_SECRET`: Secret key for JWT token generation
-- `JWT_EXPIRES_IN`: JWT token expiration time
-
-#### Optional Features
-- `ENABLE_CACHE`: Enable/disable caching (true/false)
-- `CACHE_TTL`: Cache time-to-live in seconds
-- `MAX_REQUESTS_PER_MINUTE`: Rate limiting configuration
-
-### Security Notes
-
-1. Never commit your actual `.env` file to version control
-2. Keep your API keys and secrets secure
-3. Use different values for different environments
-4. Regularly rotate your security keys
-5. Use strong, unique values for security-related variables
-
-### Troubleshooting
-
-If you encounter environment-related issues:
-
-1. Check if all required variables are set:
-   ```bash
-   npm run check-env
-   ```
-
-2. Verify the `.env` file location:
-   ```bash
-   ls -la .env
-   ```
-
-3. Check environment variable loading:
-   ```bash
-   npm run env-debug
-   ```
-
-4. Common issues:
-   - Missing required variables
-   - Incorrect API keys
-   - Wrong database connection string
-   - Permission issues with file access
+For security, always use environment variables for sensitive data and API keys.
 
 ## Contributing
 

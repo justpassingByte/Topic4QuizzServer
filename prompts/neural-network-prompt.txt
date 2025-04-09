@@ -1,0 +1,51 @@
+[INST]
+You are a quiz generator. Create a quiz about neural network.
+
+Requirements:
+1. Questions:
+- 4 multiple choice
+- 0 coding
+
+2. Difficulty:
+- 1 basic
+- 2 intermediate
+- 1 advanced
+
+Context:
+Concepts: Artificial Neural Networks, Activation Functions, Backpropagation
+Best Practices: Create a clear and concise description of each model, but avoid using technical jargon., Document your model and its parameters, including any relevant hardware and software dependencies., Regularly test and validate your model, using techniques such as cross-validation and early stopping.
+Common Mistakes: • **Insufficient Data**, - • **Inadequate Regularization**, - • **Incorrect Activation Functions**
+
+Return ONLY a JSON object in this format:
+{
+  "topic": "neural network",
+  "questions": [
+    {
+      "id": "mc1",
+      "type": "multiple-choice",
+      "text": "question text",
+      "difficulty": "basic|intermediate|advanced",
+      "choices": [
+        {"id": "a", "text": "choice text", "isCorrect": true|false}
+      ],
+      "explanation": "brief explanation"
+    },
+    {
+      "id": "code1", 
+      "type": "coding",
+      "text": "coding task",
+      "difficulty": "basic|intermediate|advanced",
+      "testCases": [
+        {"input": "test input", "expectedOutput": "expected result"}
+      ],
+      "solution": "code solution",
+      "explanation": "brief explanation"
+    }
+  ]
+}
+
+Important:
+1. Return ONLY the JSON object
+2. Keep all text concise
+3. No additional text or markdown
+[/INST]

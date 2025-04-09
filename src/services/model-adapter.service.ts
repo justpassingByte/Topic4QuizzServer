@@ -1,0 +1,546 @@
+import { Anthropic } from '@anthropic-ai/sdk';
+import { ApiKeyService } from './api-key.service';
+import { config } from 'dotenv';
+import axios from 'axios';
+import { parseJSON } from '../utils/json-parser.util';
+import { AVAILABLE_QUIZ_MODELS } from './model-config.service';
+
+// Load environment variables
+config();
+
+export enum ModelProvider {
+  HUGGINGFACE = 'HUGGINGFACE',
+  SERPER = 'SERPER'
+}
+
+// Model families for specific handling
+export enum ModelFamily {
+  LLAMA = 'llama',
+  MISTRAL = 'mistral',
+  MIXTRAL = 'mixtral',
+  QWEN = 'qwen',
+  BERT = 'bert',
+  GPT = 'gpt',
+  OTHER = 'other'
+}
+
+// Add model configurations
+export const MODEL_CONFIGS = {
+  // Large Language Models
+  'mixtral': {
+    family: ModelFamily.MIXTRAL,
+    model: 'mistralai/Mixtral-8x7B-Instruct-v0.1',
+    maxTokens: 2048,
+    temperature: 0.7,
+  },
+  'mistral': {
+    family: ModelFamily.MISTRAL,
+    model: 'mistralai/Mistral-7B-Instruct-v0.2',
+    maxTokens: 2048,
+    temperature: 0.7,
+  },
+  'qwen': {
+    family: ModelFamily.QWEN,
+    model: 'Qwen/Qwen1.5-7B-Chat',
+    maxTokens: 2048,
+    temperature: 0.7,
+  },
+  
+  // BERT Models for specific tasks
+  'bert-base': {
+    family: ModelFamily.BERT,
+    model: 'bert-base-uncased',
+    maxTokens: 512,
+    temperature: 0.3,
+  }
+};
+
+export interface ModelRequestOptions {
+  prompt: string;
+  maxTokens?: number;
+  temperature?: number;
+  systemPrompt?: string;
+  provider?: ModelProvider;
+  model?: string;
+  retryCount?: number;
+  waitBetweenRetries?: number;
+}
+
+export interface ModelResponse {
+  content: string;
+  provider: ModelProvider;
+  model: string;
+  tokenUsage?: {
+    input: number;
+    output: number;
+    total: number;
+  };
+}
+
+export class ModelAdapterService {
+  private apiKeyService: ApiKeyService;
+  private readonly MAX_RETRIES = 3;
+  private readonly DEFAULT_WAIT_MS = 20000;
+  private readonly MODEL_FALLBACK_ORDER = ['LLAMA_32', 'MIXTRAL', 'MISTRAL', 'QWEN_OMNI'] as const;
+  private currentModelIndex = 0;
+  
+  constructor() {
+    this.apiKeyService = new ApiKeyService();
+  }
+
+  private getModelFamily(model: string): ModelFamily {
+    const modelLower = model.toLowerCase();
+    if (modelLower.includes('llama')) return ModelFamily.LLAMA;
+    if (modelLower.includes('mistral')) return ModelFamily.MISTRAL;
+    if (modelLower.includes('mixtral')) return ModelFamily.MIXTRAL;
+    if (modelLower.includes('qwen')) return ModelFamily.QWEN;
+    if (modelLower.includes('bert')) return ModelFamily.BERT;
+    if (modelLower.includes('gpt')) return ModelFamily.GPT;
+    return ModelFamily.OTHER;
+  }
+  
+  private getNextModel(): string | null {
+    this.currentModelIndex++;
+    if (this.currentModelIndex >= this.MODEL_FALLBACK_ORDER.length) {
+      return null;
+    }
+    const nextModelKey = this.MODEL_FALLBACK_ORDER[this.currentModelIndex];
+    return AVAILABLE_QUIZ_MODELS[nextModelKey].model;
+  }
+  
+  async generateText(options: ModelRequestOptions): Promise<ModelResponse> {
+    const {
+      provider = ModelProvider.HUGGINGFACE,
+      retryCount = 0,
+      waitBetweenRetries = this.DEFAULT_WAIT_MS
+    } = options;
+
+    try {
+      switch (provider) {
+        case ModelProvider.HUGGINGFACE:
+          return await this.callHuggingface(options);
+        case ModelProvider.SERPER:
+          return await this.callSerper(options);
+        default:
+          throw new Error(`Provider ${provider} not supported`);
+      }
+    } catch (error: any) {
+      console.log(`Error calling model ${options.model}: ${error.message}`);
+      
+      if (retryCount < this.MAX_RETRIES) {
+        console.log(`Attempt ${retryCount + 1} failed, retrying in ${waitBetweenRetries}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitBetweenRetries));
+        return this.generateText({
+          ...options,
+          retryCount: retryCount + 1,
+          waitBetweenRetries: waitBetweenRetries * 1.5
+        });
+      }
+
+      // If we've exhausted retries with current model, try next model
+      if (provider === ModelProvider.HUGGINGFACE) {
+        const nextModel = this.getNextModel();
+        if (nextModel) {
+          console.log(`Switching to fallback model: ${nextModel}`);
+          this.currentModelIndex = 0; // Reset retry count for new model
+          return this.generateText({
+            ...options,
+            model: nextModel,
+            retryCount: 0,
+            waitBetweenRetries: this.DEFAULT_WAIT_MS
+          });
+        }
+      }
+      
+      throw new Error(`All models failed after retries. Last error: ${error.message}`);
+    }
+  }
+  
+  private async callHuggingface(options: ModelRequestOptions): Promise<ModelResponse> {
+    const modelFamily = this.getModelFamily(options.model || '');
+    console.log(`Calling Hugging Face API for model: ${options.model} (Family: ${modelFamily})`);
+    
+    try {
+      const requestBody = this.buildHuggingFaceRequest(options, modelFamily);
+      
+      const headers = {
+        'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+        'Content-Type': 'application/json'
+      };
+
+      const response = await axios.post(
+        `https://api-inference.huggingface.co/models/${options.model}`,
+        requestBody,
+        { headers }
+      );
+
+      let content = this.parseHuggingFaceResponse(response.data, options, modelFamily);
+      content = this.cleanupModelResponse(content, options);
+
+      // Reset model index on successful call
+      this.currentModelIndex = 0;
+
+      return {
+        content,
+        provider: ModelProvider.HUGGINGFACE,
+        model: options.model || 'unknown'
+      };
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 503) {
+          console.log('Model is loading, waiting and retrying...');
+          throw new Error('MODEL_LOADING');
+        }
+        throw new Error(`Hugging Face API error: ${error.response?.data?.error || error.message}`);
+      }
+      throw error;
+    }
+  }
+
+  private buildHuggingFaceRequest(options: ModelRequestOptions, modelFamily: ModelFamily): any {
+    const baseRequest = {
+      inputs: options.prompt,
+      parameters: {
+        max_new_tokens: options.maxTokens || 2048,
+        temperature: options.temperature || 0.7,
+        return_full_text: false
+      }
+    };
+
+    // Add model-specific parameters
+    switch (modelFamily) {
+      case ModelFamily.LLAMA:
+      case ModelFamily.QWEN:
+        return {
+          ...baseRequest,
+          parameters: {
+            ...baseRequest.parameters,
+            do_sample: true,
+            top_p: 0.95,
+            top_k: 50,
+            repetition_penalty: 1.1
+          }
+        };
+      case ModelFamily.BERT:
+        return {
+          ...baseRequest,
+          parameters: {
+            ...baseRequest.parameters,
+            do_sample: false,
+            max_length: 512,
+            num_return_sequences: 1,
+            truncation: true
+          }
+        };
+      case ModelFamily.GPT:
+        return {
+          ...baseRequest,
+          parameters: {
+            ...baseRequest.parameters,
+            do_sample: true,
+            top_p: 0.92,
+            top_k: 50,
+            repetition_penalty: 1.1,
+            length_penalty: 1.0
+          }
+        };
+      default:
+        return baseRequest;
+    }
+  }
+
+  private parseHuggingFaceResponse(data: any, options: ModelRequestOptions, modelFamily: ModelFamily): string {
+    try {
+      if (Array.isArray(data)) {
+        if (data[0]?.generated_text) {
+          return data[0].generated_text;
+        }
+        return data[0] || '';
+      }
+      
+      if (typeof data === 'object') {
+        return data.generated_text || data.content || JSON.stringify(data);
+      }
+      
+      return String(data);
+    } catch (error) {
+      console.error('Error parsing Hugging Face response:', error);
+      return String(data);
+    }
+  }
+
+  private cleanupModelResponse(content: string, options: ModelRequestOptions): string {
+    try {
+      // Remove common prefixes
+      content = content.replace(/^\[ANALYSIS\]\s*/, '')
+                       .replace(/^\[RESPONSE\]\s*/, '')
+                       .replace(/^\[RESULT\]\s*/, '')
+                       .replace(/^\[OUTPUT\]\s*/, '');
+  
+      // Attempt to parse and clean up JSON-like content
+      if (content.trim().startsWith('{') || content.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(content);
+  
+          // Nếu là mảng thì chỉ giữ 3 phần tử đầu
+          if (Array.isArray(parsed)) {
+            const limited = parsed.slice(0, 3);
+            return JSON.stringify(limited, null, 2);
+          }
+  
+          return JSON.stringify(parsed, null, 2);
+        } catch (e) {
+          // Nếu parse JSON thất bại, dùng phương pháp thủ công
+          return this.cleanJSONContent(content);
+        }
+      }
+  
+      return content.trim();
+    } catch (error) {
+      console.error('Error cleaning up model response:', error);
+      return content;
+    }
+  }
+  
+
+  private async callSerper(options: ModelRequestOptions): Promise<ModelResponse> {
+    try {
+      const apiKey = process.env.SERPER_API_KEY;
+      if (!apiKey) {
+        throw new Error('Missing SERPER_API_KEY in .env file');
+      }
+
+      const response = await axios.post(
+        'https://google.serper.dev/search',
+        {
+          q: options.prompt,
+          gl: 'us',
+          hl: 'en',
+          num: 5
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': apiKey
+          }
+        }
+      );
+
+      const organicResults = response.data.organic || [];
+      const content = JSON.stringify(organicResults.map((result: any, index: number) => ({
+        content: result.snippet || "",
+        source: result.title || "Web Search",
+        url: result.link || "",
+        relevanceScore: 1 - (index * 0.1)
+      })));
+
+      return {
+        content,
+        provider: ModelProvider.SERPER,
+        model: 'serper-search'
+      };
+    } catch (error) {
+      console.error('Error calling Serper:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Parses a JSON string from LLM output, handling common issues
+   * @param content The JSON string to parse
+   * @returns Parsed JSON object or null if parsing fails
+   */
+  parseJSON<T>(content: string): T | null {
+    try {
+      // Xử lý trường hợp content là rỗng
+      if (!content || content.trim() === '' || content === '[]') {
+        console.warn('Empty content provided to parseJSON');
+        return null;
+      }
+
+      // Remove common prefixes
+      content = content.replace(/^\[ANALYSIS\]\s*/, '')
+                     .replace(/^\[RESPONSE\]\s*/, '')
+                     .replace(/^\[RESULT\]\s*/, '')
+                     .replace(/^\[OUTPUT\]\s*/, '')
+                     .replace(/^Content:\s*/i, '');
+
+      // First try direct parsing
+      try {
+        return JSON.parse(content) as T;
+      } catch (e) {
+        // Try cleaning the content before parsing
+        const cleanedContent = this.cleanJSONContent(content);
+        try {
+          return JSON.parse(cleanedContent) as T;
+        } catch (e2) {
+          // Try to extract JSON from text
+          return this.extractJsonFromText<T>(content);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to parse JSON:', error);
+      console.error('Content preview:', content?.substring(0, 200));
+      console.error('Full content length:', content?.length || 0);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+      }
+      
+      // Trả về null thay vì throw exception
+      return null;
+    }
+  }
+
+  /**
+   * Cleans JSON content by removing markup and other non-JSON content
+   */
+  cleanJSONContent(content: string): string {
+    if (!content) return '';
+    
+    // Xóa tất cả các tiền tố phổ biến
+    let cleaned = content;
+    
+    // Xóa các tiền tố lồng nhau (Content: Response: Content: ...) 
+    const commonPrefixes = [
+      /^Content:\s*/i,
+      /^Response:\s*/i, 
+      /^Brief overview:\s*/i,
+      /^Analysis:\s*/i,
+      /^Result:\s*/i,
+      /^Output:\s*/i,
+      /^Quiz:\s*/i,
+      /^Summary:\s*/i,
+      /^Here is the JSON:\s*/i,
+      /^Content :QuizQuestions:\s*/i
+    ];
+    
+    // Lặp lại việc xóa tiền tố nhiều lần để xử lý các tiền tố lồng nhau
+    let previousCleanedLength = -1;
+    while (cleaned.length !== previousCleanedLength) {
+      previousCleanedLength = cleaned.length;
+      
+      // Xóa tiền tố từ đầu chuỗi
+      for (const prefix of commonPrefixes) {
+        cleaned = cleaned.replace(prefix, '');
+      }
+      
+      // Xóa tiền tố ở đầu mỗi dòng
+      const lines = cleaned.split('\n');
+      const cleanedLines = lines.map(line => {
+        let cleanedLine = line;
+        for (const prefix of commonPrefixes) {
+          cleanedLine = cleanedLine.replace(prefix, '');
+        }
+        return cleanedLine;
+      });
+      cleaned = cleanedLines.join('\n');
+    }
+    
+    // Xóa các khối markdown
+    cleaned = cleaned
+      .replace(/^```json\s*/i, '')  // xóa ```json
+      .replace(/```$/i, '')         // xóa ``` kết thúc
+      .replace(/^```\s*/i, '')      // xóa ``` đơn thuần ở đầu
+      .trim();
+    
+    // Xóa các chỉ dẫn như "return JSON with:"
+    cleaned = cleaned
+      .replace(/^(Please )?(return|provide) JSON( (with|in the following format))?(:|\.)\s*/i, '')
+      .replace(/^Here is the (requested|required|specified) JSON(:|\.)\s*/i, '')
+      .replace(/^[\s\S]*?return json with:\s*/i, '') // xóa tất cả nội dung trước "return json with:"
+      .trim();
+    
+    // Nếu có thể tìm thấy đoạn JSON, trích xuất nó
+    const jsonStartIndex = cleaned.indexOf('{');
+    const jsonEndIndex = cleaned.lastIndexOf('}');
+    
+    if (jsonStartIndex !== -1 && jsonEndIndex !== -1 && jsonEndIndex > jsonStartIndex) {
+      cleaned = cleaned.substring(jsonStartIndex, jsonEndIndex + 1);
+    } else {
+      // Thử tìm mảng JSON
+      const arrayStartIndex = cleaned.indexOf('[');
+      const arrayEndIndex = cleaned.lastIndexOf(']');
+      
+      if (arrayStartIndex !== -1 && arrayEndIndex !== -1 && arrayEndIndex > arrayStartIndex) {
+        cleaned = cleaned.substring(arrayStartIndex, arrayEndIndex + 1);
+      }
+    }
+    
+    return cleaned;
+  }
+  
+  /**
+   * Tries to extract JSON from text output when model returns natural language instead of JSON
+   */
+  private extractJsonFromText<T>(text: string): T | null {
+    try {
+      // 1. Tìm kiếm chuỗi JSON trong dấu ```
+      const jsonCodeBlockMatch = text.match(/```(?:json)?([\s\S]*?)```/);
+      if (jsonCodeBlockMatch && jsonCodeBlockMatch[1]) {
+        const possibleJson = jsonCodeBlockMatch[1].trim();
+        try {
+          return JSON.parse(possibleJson) as T;
+        } catch (e) {
+          // Continue to next method if this fails
+        }
+      }
+      
+      // 2. Tìm kiếm obj JSON bắt đầu với { và kết thúc với }
+      const jsonObjMatch = text.match(/{[\s\S]*?}/);
+      if (jsonObjMatch && jsonObjMatch[0]) {
+        try {
+          return JSON.parse(jsonObjMatch[0]) as T;
+        } catch (e) {
+          // Continue to next method if this fails
+        }
+      }
+      
+      // 3. Tìm kiếm mảng JSON bắt đầu với [ và kết thúc với ]
+      const jsonArrayMatch = text.match(/\[[\s\S]*?\]/);
+      if (jsonArrayMatch && jsonArrayMatch[0]) {
+        try {
+          return JSON.parse(jsonArrayMatch[0]) as T;
+        } catch (e) {
+          // Continue to next method if this fails
+        }
+      }
+      
+      // 4. Nếu văn bản có cấu trúc "key: value" thì chuyển thành JSON
+      if (text.match(/[\w\s]+:\s*["']?[\w\s]+"'?/)) {
+        const lines = text.split('\n')
+          .map(line => line.trim())
+          .filter(line => line && line.includes(':'));
+        
+        // Tạo đối tượng từ các dòng có dạng key: value
+        const jsonObj: Record<string, any> = {};
+        
+        for (const line of lines) {
+          const colonIndex = line.indexOf(':');
+          if (colonIndex > 0) {
+            const key = line.substring(0, colonIndex).trim();
+            let value = line.substring(colonIndex + 1).trim();
+            
+            // Làm sạch giá trị nếu có dấu ngoặc kép/đơn
+            if ((value.startsWith('"') && value.endsWith('"')) || 
+                (value.startsWith("'") && value.endsWith("'"))) {
+              value = value.substring(1, value.length - 1);
+            }
+            
+            jsonObj[key] = value;
+          }
+        }
+        
+        if (Object.keys(jsonObj).length > 0) {
+          return jsonObj as unknown as T;
+        }
+      }
+      
+      // Không thể trích xuất JSON
+      console.warn('Could not extract JSON from text');
+      return null;
+    } catch (error) {
+      console.error('Error extracting JSON from text:', error);
+      return null;
+    }
+  }
+} 

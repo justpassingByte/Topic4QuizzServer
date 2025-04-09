@@ -1,0 +1,77 @@
+{
+  "info": {
+    "name": "Ask2Test API",
+    "description": "Collection for testing Ask2Test quiz generation API with database caching",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Quiz Operations",
+      "item": [
+        {
+          "name": "1. Get Quiz by Topic (JavaScript Promises)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/topic/JavaScript Promises",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "topic", "JavaScript Promises"]
+            },
+            "description": "Get quiz for JavaScript Promises - will return from cache if exists, otherwise generate new"
+          },
+          "response": []
+        },
+        {
+          "name": "2. Get Quiz by Topic (JavaScript Async/Await)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/topic/JavaScript Async/Await",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "topic", "JavaScript Async/Await"]
+            },
+            "description": "Get quiz for Async/Await - will return from cache if exists, otherwise generate new"
+          },
+          "response": []
+        },
+        {
+          "name": "3. Get Quiz by Topic (React Hooks)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/topic/React Hooks",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "topic", "React Hooks"]
+            },
+            "description": "Get quiz for React Hooks - will return from cache if exists, otherwise generate new"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "History Operations",
+      "item": [
+        {
+          "name": "Get Topic History",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/history/JavaScript",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "history", "JavaScript"]
+            },
+            "description": "Get quiz generation history for JavaScript topics"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    }
+  ]
+} 
