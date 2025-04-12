@@ -7,7 +7,9 @@ export class MemoryService {
   private client: MongoClient;
   private quizCollection!: Collection<QuizSession>;
   private promptCollection!: Collection<PromptHistory>;
+  private quizzesCollection!: Collection<Quiz>;
   private isConnected: boolean = false;
+  private isInitialized: boolean = false;
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAY = 1000; // 1 second
 
@@ -21,6 +23,90 @@ export class MemoryService {
     };
     
     this.client = new MongoClient(uri, options);
+    this.initializeConnection();
+  }
+
+  private async initializeConnection(): Promise<void> {
+    if (this.isInitialized) return;
+    
+    try {
+      await this.client.connect();
+      this.isConnected = true;
+      
+      const db = this.client.db();
+      this.quizCollection = db.collection('sessions');
+      this.promptCollection = db.collection('prompts');
+      this.quizzesCollection = db.collection('quizzes');
+      
+      await this.initializeCollections();
+      this.isInitialized = true;
+      // console.log('Connected to MongoDB and initialized collections successfully');
+    } catch (error) {
+      console.error('Failed to connect to MongoDB:', error);
+      this.isConnected = false;
+      throw error;
+    }
+  }
+
+  private async initializeCollections(): Promise<void> {
+    try {
+      const db = this.client.db();
+      
+      const collections = await db.listCollections().toArray();
+      const collectionNames = collections.map(c => c.name);
+
+      if (!collectionNames.includes('prompts')) {
+        await db.createCollection('prompts');
+        // console.log('Created prompts collection');
+      }
+
+      if (!collectionNames.includes('sessions')) {
+        await db.createCollection('sessions');
+        // console.log('Created sessions collection');
+      }
+
+      if (!collectionNames.includes('quizzes')) {
+        await db.createCollection('quizzes');
+        // console.log('Created quizzes collection');
+      }
+
+      await this.promptCollection.dropIndexes();
+      await this.quizCollection.dropIndexes();
+      await this.quizzesCollection.dropIndexes();
+
+      await this.promptCollection.createIndex(
+        { topic: 1 },
+        { 
+          unique: true,
+          partialFilterExpression: { topic: { $type: "string" } }
+        }
+      );
+
+      await this.quizCollection.createIndex(
+        { id: 1 },
+        { 
+          unique: true,
+          partialFilterExpression: { id: { $type: "string" } }
+        }
+      );
+
+      await this.quizCollection.createIndex({ topic: 1 });
+
+      await this.quizzesCollection.createIndex(
+        { id: 1 },
+        { 
+          unique: true,
+          partialFilterExpression: { id: { $type: "string" } }
+        }
+      );
+
+      await this.quizzesCollection.createIndex({ topic: 1 });
+
+      // console.log('Collections and indexes initialized successfully');
+    } catch (error) {
+      console.error('Error initializing collections:', error);
+      throw error;
+    }
   }
 
   private async ensureConnection(): Promise<void> {
@@ -29,11 +115,17 @@ export class MemoryService {
     let retries = 0;
     while (retries < this.MAX_RETRIES) {
       try {
+        if (!this.isInitialized) {
+          await this.initializeConnection();
+          return;
+        }
+
         await this.client.connect();
         this.quizCollection = this.client.db().collection<QuizSession>('sessions');
         this.promptCollection = this.client.db().collection<PromptHistory>('prompts');
+        this.quizzesCollection = this.client.db().collection<Quiz>('quizzes');
         this.isConnected = true;
-        console.log('Connected to MongoDB');
+        // console.log('Reconnected to MongoDB successfully');
         return;
       } catch (error) {
         retries++;
@@ -56,7 +148,7 @@ export class MemoryService {
     try {
       await this.client.close();
       this.isConnected = false;
-      console.log('Disconnected from MongoDB');
+      // console.log('Disconnected from MongoDB');
     } catch (error) {
       console.error('Error disconnecting from MongoDB:', error);
       throw error;
@@ -153,12 +245,13 @@ export class MemoryService {
     ) as { topic: string; quizCount: number; lastQuizDate: Date; }[];
   }
 
-  async createSession(topic: string, quiz: Quiz): Promise<QuizSession> {
+  async createSession(topic: string, quiz: Quiz, similarTopics: string[] = []): Promise<QuizSession> {
     const session: QuizSession = {
       id: uuidv4(),
       topic,
       quiz,
-      createdAt: new Date()
+      createdAt: new Date(),
+      similarTopics
     };
 
     await this.saveSession(session);
@@ -194,8 +287,11 @@ export class MemoryService {
   }
 
   async savePromptHistory(topic: string, history: PromptHistory): Promise<void> {
-    await this.withRetry(() =>
-      this.promptCollection.updateOne(
+    try {
+      await this.ensureConnection();
+      // console.log(`Saving prompt history for topic: ${topic}`);
+      
+      const result = await this.promptCollection.updateOne(
         { topic },
         {
           $set: {
@@ -204,14 +300,105 @@ export class MemoryService {
           }
         },
         { upsert: true }
-      )
-    );
+      );
+
+      // console.log(`Prompt history saved successfully. Modified: ${result.modifiedCount}, Upserted: ${result.upsertedCount}`);
+    } catch (error) {
+      console.error('Error saving prompt history:', error);
+      throw error;
+    }
   }
 
   async getPromptHistory(topic: string): Promise<PromptHistory | null> {
-    return await this.withRetry(() =>
-      this.promptCollection.findOne({ topic })
-    );
+    try {
+      await this.ensureConnection();
+      // console.log(`Fetching prompt history for topic: ${topic}`);
+      
+      const history = await this.promptCollection.findOne({ topic });
+      // console.log(`Prompt history found: ${!!history}`);
+      
+      return history;
+    } catch (error) {
+      console.error('Error getting prompt history:', error);
+      throw error;
+    }
+  }
+
+  async storePromptFeedback(topic: string, feedbackData: {
+    timestamp: Date;
+    feedback: {
+      score: number;
+      issues: string[];
+      suggestions: string[];
+      successfulElements: string[];
+    };
+    prompt: string;
+  }): Promise<void> {
+    try {
+      await this.ensureConnection();
+      console.log(`=== Evaluation Feedback for Topic: ${topic} ===`);
+      console.log('Score:', feedbackData.feedback.score);
+      console.log('Issues:', feedbackData.feedback.issues);
+      console.log('Successful Elements:', feedbackData.feedback.successfulElements);
+      console.log('Suggestions:', feedbackData.feedback.suggestions);
+      console.log('Timestamp:', feedbackData.timestamp);
+      console.log('=== End of Evaluation Feedback ===\n');
+
+      const history = await this.getPromptHistory(topic);
+      const updatedHistory: PromptHistory = history || {
+        topic,
+        attempts: 0,
+        successfulPrompts: [],
+        failedPrompts: [],
+        averageScore: 0,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      const formattedFeedback = {
+        strengths: feedbackData.feedback.successfulElements,
+        weaknesses: feedbackData.feedback.issues,
+        suggestions: feedbackData.feedback.suggestions
+      };
+
+      const promptEntry = {
+        prompt: feedbackData.prompt,
+        score: feedbackData.feedback.score,
+        feedback: formattedFeedback,
+        timestamp: feedbackData.timestamp
+      };
+
+      if (feedbackData.feedback.score >= 0.7) {
+        updatedHistory.successfulPrompts.push(promptEntry);
+        console.log('✅ Evaluation Result: Successful (Score >= 0.7)');
+      } else {
+        updatedHistory.failedPrompts.push(promptEntry);
+        console.log('❌ Evaluation Result: Failed (Score < 0.7)');
+      }
+
+      updatedHistory.attempts += 1;
+      const allScores = [
+        ...updatedHistory.successfulPrompts.map(p => p.score),
+        ...updatedHistory.failedPrompts.map(p => p.score)
+      ];
+      updatedHistory.averageScore = allScores.reduce((a, b) => a + b, 0) / allScores.length;
+      updatedHistory.updatedAt = new Date();
+
+      console.log('📊 Evaluation Statistics:');
+      console.log(`Total Attempts: ${updatedHistory.attempts}`);
+      console.log(`Average Score: ${updatedHistory.averageScore.toFixed(2)}`);
+      console.log(`Success Rate: ${(updatedHistory.successfulPrompts.length / updatedHistory.attempts * 100).toFixed(2)}%`);
+
+      await this.promptCollection.updateOne(
+        { topic },
+        { $set: updatedHistory },
+        { upsert: true }
+      );
+
+    } catch (error) {
+      console.error('Error storing prompt feedback:', error);
+      throw error;
+    }
   }
 
   async getTopPerformingPrompts(topic: string, limit: number = 5): Promise<Array<{
@@ -429,5 +616,53 @@ export class MemoryService {
       console.error(`Error getting sessions by subtopic ${subtopic}:`, error);
       return [];
     }
+  }
+
+  // New methods for quiz management
+  async saveQuiz(quiz: Quiz): Promise<void> {
+    if (!quiz.id) {
+      quiz.id = uuidv4(); // Ensure quiz has an ID
+    }
+    await this.withRetry(() => this.quizzesCollection.insertOne(quiz));
+  }
+
+  async getQuiz(id: string): Promise<Quiz | null> {
+    if (!id) return null;
+    return await this.withRetry(() => this.quizzesCollection.findOne({ id }));
+  }
+
+  async getAllQuizzes(): Promise<Quiz[]> {
+    return await this.withRetry(() => 
+      this.quizzesCollection.find({
+        id: { $exists: true, $type: "string" }
+      }).toArray()
+    );
+  }
+
+  async getQuizzesByTopic(topic: string): Promise<Quiz[]> {
+    if (!topic) return [];
+    return await this.withRetry(() => 
+      this.quizzesCollection
+        .find({ 
+          topic: { $regex: topic, $options: 'i' },
+          id: { $exists: true, $type: "string" }
+        })
+        .toArray()
+    );
+  }
+
+  async updateQuiz(id: string, updates: Partial<Quiz>): Promise<void> {
+    if (!id) return;
+    await this.withRetry(() =>
+      this.quizzesCollection.updateOne(
+        { id },
+        { 
+          $set: {
+            ...updates,
+            updatedAt: new Date()
+          }
+        }
+      )
+    );
   }
 } 

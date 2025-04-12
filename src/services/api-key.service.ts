@@ -1,4 +1,3 @@
-import { Anthropic } from '@anthropic-ai/sdk';
 import { config } from 'dotenv';
 
 // Load environment variables
@@ -17,22 +16,25 @@ export class ApiKeyService {
   private readonly MAX_REQUESTS_PER_WINDOW: number;
 
   constructor() {
-    // Load API keys from environment variables
-    const envKeys = process.env.CLAUDE_API_KEYS || '';
+    // Load HuggingFace API keys
+    const envKeys = process.env.HUGGINGFACE_API_KEYS || '';
+    console.log('Loading HuggingFace API keys:', envKeys ? 'Keys found' : 'No keys found');
     this.apiKeys = envKeys.split(',').map(key => key.trim()).filter(Boolean);
+    console.log('Number of API keys loaded:', this.apiKeys.length);
     
     if (this.apiKeys.length === 0) {
       // Try individual key variables as fallback
       for (let i = 1; i <= 5; i++) {
-        const key = process.env[`CLAUDE_API_KEY_${i}`];
+        const key = process.env[`HUGGINGFACE_API_KEY_${i}`];
         if (key) {
           this.apiKeys.push(key.trim());
+          console.log(`Found individual key ${i}`);
         }
       }
     }
 
     if (this.apiKeys.length === 0) {
-      throw new Error('No Claude API keys configured. Please set CLAUDE_API_KEYS in .env file');
+      throw new Error('No HuggingFace API keys configured. Please set HUGGINGFACE_API_KEYS in .env file');
     }
 
     this.currentKeyIndex = 0;
@@ -40,7 +42,7 @@ export class ApiKeyService {
     this.RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW || '60000');
     this.MAX_REQUESTS_PER_WINDOW = parseInt(process.env.MAX_REQUESTS_PER_WINDOW || '50');
 
-    // Initialize usage tracking for each key
+    // Initialize usage tracking for all keys
     this.apiKeys.forEach(key => {
       this.keyUsage.set(key, {
         lastUsed: 0,
@@ -57,7 +59,7 @@ export class ApiKeyService {
     return key;
   }
 
-  public getNextAvailableKey(): string {
+  private getNextAvailableKey(): string {
     const startIndex = this.currentKeyIndex;
     let attempts = 0;
 
@@ -85,13 +87,7 @@ export class ApiKeyService {
       }
     });
 
-    throw new Error(`All API keys are rate limited. Try again in ${Math.ceil(minWaitTime/1000)} seconds.`);
-  }
-
-  public createClaudeClient(): Anthropic {
-    return new Anthropic({
-      apiKey: this.getCurrentKey()
-    });
+    throw new Error(`All HuggingFace API keys are rate limited. Try again in ${Math.ceil(minWaitTime/1000)} seconds.`);
   }
 
   private isKeyAvailable(key: string): boolean {
@@ -141,5 +137,14 @@ export class ApiKeyService {
 
   private rotateKey(): void {
     this.currentKeyIndex = (this.currentKeyIndex + 1) % this.apiKeys.length;
+  }
+
+  // Helper method for external use
+  public getHuggingFaceClient() {
+    const key = this.getCurrentKey();
+    console.log('Using HuggingFace API key:', key.substring(0, 7) + '...');
+    return {
+      apiKey: key
+    };
   }
 } 

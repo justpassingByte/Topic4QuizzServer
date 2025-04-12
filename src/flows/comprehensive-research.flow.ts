@@ -1,13 +1,11 @@
 import { ContextAnalyzer, ContextAnalysisData } from '../agents/context-analyzer.agent';
-import { ResearchAgent, ResearchData, TopicResearchResult, SubtopicResearchData } from '../agents/research-agent';
-import { SearchAnalysisAgent } from '../agents/search-analysis-agent';
-import { AIAnalysisOutput, WebSearchResult } from '../interfaces/search-analysis.interface';
+import { SearchAnalysisAgent } from '../agents/search-analysis.agent';
+import { AIAnalysisOutput } from '../agents/search-analysis.agent';
 import { ModelConfigService } from '../services/model-config.service';
 import { ModelAdapterService } from '../services/model-adapter.service';
 
 export interface SubtopicAnalysis {
   name: string;
-  research: ResearchData;
   searchAnalysis: AIAnalysisOutput;
 }
 
@@ -21,7 +19,6 @@ export interface ComprehensiveAnalysis {
 
 export class ComprehensiveResearchFlow {
   private contextAnalyzer: ContextAnalyzer;
-  private researchAgent: ResearchAgent;
   private searchAnalysisAgent: SearchAnalysisAgent;
   private readonly MAX_SUBTOPICS = 3; // Maximum number of subtopics to research
 
@@ -34,11 +31,6 @@ export class ComprehensiveResearchFlow {
       modelConfigService,
       modelAdapterService
     );
-    this.researchAgent = new ResearchAgent(
-      modelConfigService,
-      modelAdapterService,
-      serperApiKey
-    );
     this.searchAnalysisAgent = new SearchAnalysisAgent(
       modelConfigService,
       modelAdapterService,
@@ -47,44 +39,37 @@ export class ComprehensiveResearchFlow {
   }
 
   async analyze(topic: string): Promise<ComprehensiveAnalysis> {
-    console.log(`Starting comprehensive analysis for topic: ${topic}`);
+    // console.log(`Starting comprehensive analysis for topic: ${topic}`);
 
     // Step 1: Analyze context to identify subtopics
-    console.log('Step 1: Analyzing context...');
+    // console.log('Step 1: Analyzing context...');
     const contextAnalysis = await this.contextAnalyzer.analyze(topic);
-    console.log(`Found ${contextAnalysis.keyConcepts.length} key concepts and ${contextAnalysis.suggestedTopics?.length || 0} suggested topics`);
+    // console.log(`Found ${contextAnalysis.keyConcepts.length} key concepts and ${contextAnalysis.suggestedTopics?.length || 0} suggested topics`);
 
     // Step 2: Select and prioritize subtopics
-    console.log('Step 2: Selecting priority subtopics...');
+    // console.log('Step 2: Selecting priority subtopics...');
     const prioritizedSubtopics = this.prioritizeSubtopics(
       contextAnalysis.keyConcepts.map(c => c.name),
       contextAnalysis.suggestedTopics || []
     );
 
-    // Step 3: Research all subtopics in relation to the main topic
-    console.log(`Step 3: Researching ${prioritizedSubtopics.length} selected subtopics...`);
-    
-    // 3.1: Perform detailed research on all subtopics together
-    const topicResearch = await this.researchAgent.researchSubtopics(
-      topic,
-      prioritizedSubtopics,
-      { includeReferences: true }
-    );
-    console.log(`Completed research on ${topicResearch.subtopicResearch.length} subtopics`);
-    
-    // 3.2: Search and analyze web content for each subtopic
+    // Step 3: Search and analyze web content for each subtopic
+    // console.log(`Step 3: Analyzing ${prioritizedSubtopics.length} selected subtopics...`);
     const subtopicAnalyses: SubtopicAnalysis[] = [];
     
-    for (const subtopicData of topicResearch.subtopicResearch) {
-      console.log(`Analyzing web content for subtopic: ${subtopicData.subtopic}`);
+    for (const subtopic of prioritizedSubtopics) {
+      // console.log(`Analyzing web content for subtopic: ${subtopic}`);
       
       // Perform web search analysis
-      const searchQuery = `${topic} ${subtopicData.subtopic}`;
-      const searchAnalysis = await this.searchAnalysisAgent.searchAndAnalyzeWithMixtral(searchQuery);
+      const searchQuery = `${topic} ${subtopic}`;
+      const searchAnalysis = await this.searchAnalysisAgent.searchAndAnalyze(searchQuery, {
+        searchResultLimit: 5,
+        maxTokens: 1000,
+        temperature: 0.3
+      });
 
       subtopicAnalyses.push({
-        name: subtopicData.subtopic,
-        research: subtopicData.research,
+        name: subtopic,
         searchAnalysis
       });
     }

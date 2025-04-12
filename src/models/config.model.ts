@@ -1,3 +1,5 @@
+import { Difficulty } from './quiz.model';
+
 export interface ResearchAgentConfig {
   maxTokens?: number;
   temperature?: number;
@@ -5,7 +7,7 @@ export interface ResearchAgentConfig {
   includeExamples?: boolean;
   includeSources?: boolean;
   maxResourcesPerType?: number;
-  depth?: 'basic' | 'intermediate' | 'advanced';
+  depth?: Difficulty;
   focus?: string[];
   minConfidence?: number;
 } 

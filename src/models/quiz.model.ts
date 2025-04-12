@@ -1,3 +1,5 @@
+export type Difficulty = 'basic' | 'intermediate' | 'advanced';
+
 export interface DifficultyDistribution {
   basic: number;
   intermediate: number;
@@ -21,8 +23,8 @@ export interface Choice {
 export interface BaseQuestion {
   id: string;
   text: string;
-  difficulty: 'basic' | 'intermediate' | 'advanced';
-  explanation: string;
+  difficulty: Difficulty;
+  explanation?: string;
 }
 
 export interface MultipleChoiceQuestion extends BaseQuestion {
@@ -48,6 +50,7 @@ export interface QuizMetadata {
 
 export interface Quiz {
   id: string;
+  prompt: string;
   questions: Array<MultipleChoiceQuestion | CodingQuestion>;
   createdAt: Date;
   config: QuizGenerationConfig;
@@ -57,6 +60,7 @@ export interface Quiz {
     generatedAt: string;
     estimatedTime: number;
   };
+  updatedAt?: Date;
 }
 
 export interface QuizSession {
@@ -67,6 +71,12 @@ export interface QuizSession {
   updatedAt?: Date;
   similarTopics?: string[];
   evaluation?: QuizEvaluation;
+  promptHistory?: {
+    attempts: number;
+    successfulPrompts: PromptFeedback[];
+    failedPrompts: PromptFeedback[];
+    averageScore: number;
+  };
 }
 
 export interface ResearchData {
@@ -90,6 +100,8 @@ export interface ResearchData {
 export interface QuizGenerationConfig {
   multipleChoiceCount: number;
   codingQuestionCount: number;
+  questionCount?: number;
+  difficulty?: 'basic' | 'intermediate' | 'advanced';
   difficultyDistribution: {
     basic: number;
     intermediate: number;
@@ -101,11 +113,23 @@ export interface QuizGenerationConfig {
   };
   includeHints: boolean;
   maxAttempts: number;
+  analysisResults?: {
+    mainSummary?: string;
+    importantPoints?: string[];
+    topicRelevanceScore?: number;
+    sourceQuality?: {
+      credibility: number;
+      recency: number;
+      diversity: number;
+    };
+    recommendations?: string[];
+  };
 }
 
 export interface PromptFeedback {
   prompt: any;
   score: number;
+  timestamp: Date;
   feedback: {
     strengths: string[];
     weaknesses: string[];
@@ -114,10 +138,13 @@ export interface PromptFeedback {
 }
 
 export interface PromptHistory {
+  topic: string;
   attempts: number;
   successfulPrompts: PromptFeedback[];
   failedPrompts: PromptFeedback[];
   averageScore: number;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface QuizEvaluation {
@@ -153,4 +180,20 @@ export interface QuizGenerationMetadata {
   };
   researchSummary: string;
   promptVersion: number;
+}
+
+export interface SubtopicAnalysis {
+  topic: string;
+  difficulty?: 'basic' | 'intermediate' | 'advanced';
+  searchAnalysis: {
+    mainSummary?: string;
+    importantPoints?: string[];
+    topicRelevanceScore?: number;
+    sourceQuality?: {
+      credibility: number;
+      recency: number;
+      diversity: number;
+    };
+    recommendations?: string[];
+  };
 } 

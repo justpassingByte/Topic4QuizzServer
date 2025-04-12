@@ -6,9 +6,11 @@ import {
   PromptFeedback as QuizPromptFeedback,
   PromptHistory,
   QuizEvaluation,
-
+  DifficultyDistribution,
+  SubtopicAnalysis,
   MultipleChoiceQuestion,
-  CodingQuestion
+  CodingQuestion,
+  Difficulty
 } from '../models/quiz.model';
 import {
   EvaluationResult,
@@ -27,7 +29,7 @@ import { PromptFeedback } from '../agents/prompt-builder.agent';
 
 
 interface QuizGenerationOptions extends QuizGenerationConfig {
-  difficulty: 'basic' | 'intermediate' | 'advanced';
+  difficulty: Difficulty;
   numberOfQuestions: number;
   topics: string[];
 }
@@ -35,45 +37,33 @@ interface QuizGenerationOptions extends QuizGenerationConfig {
 
 export class QuizGenerationFlow {
 
-  private quizGenerator: QuizGeneratorAgent;
-  private quizEvaluator: QuizEvaluatorAgent;
+  private readonly DEFAULT_QUESTIONS_PER_SUBTOPIC = 5;
   private memory: MemoryService;
-  private promptBuilder: PromptBuilderAgent;
-  private promptHistory: Map<string, PromptHistory>;
-  private modelConfigService: ModelConfigService;
-  private modelAdapterService: ModelAdapterService;
+  private promptHistory: Map<string, string>;
+  private quizEvaluator: QuizEvaluatorAgent;
   private comprehensiveResearch: ComprehensiveResearchFlow;
 
-  constructor(modelConfig: ModelConfigService) {
-    // Initialize services first
-    this.modelConfigService = modelConfig;
-    this.modelAdapterService = new ModelAdapterService();
+  constructor(
+    private readonly modelAdapterService: ModelAdapterService,
+    private readonly modelConfigService: ModelConfigService,
+    private readonly quizGenerator: QuizGeneratorAgent,
+    private readonly promptBuilder: PromptBuilderAgent
+  ) {
     this.memory = new MemoryService();
     this.promptHistory = new Map();
-
-    // Initialize agents with required dependencies
+    
     const serperApiKey = process.env.SERPER_API_KEY || '';
-
+    
+    this.quizEvaluator = new QuizEvaluatorAgent(
+      this.modelConfigService,
+      this.modelAdapterService,
+      this.memory
+    );
+    
     this.comprehensiveResearch = new ComprehensiveResearchFlow(
       this.modelConfigService,
       this.modelAdapterService,
       serperApiKey
-    );
-
-    
-    this.promptBuilder = new PromptBuilderAgent(
-      this.modelConfigService,
-      this.modelAdapterService
-    );
-    
-    this.quizGenerator = new QuizGeneratorAgent(
-      this.modelConfigService,
-      this.modelAdapterService
-    );
-    
-    this.quizEvaluator = new QuizEvaluatorAgent(
-      this.modelConfigService,
-      this.modelAdapterService
     );
   }
 
@@ -96,7 +86,6 @@ export class QuizGenerationFlow {
   }
   async generateQuiz(topic: string, config: QuizGenerationConfig): Promise<Quiz> {
     try {
-      // Convert QuizGenerationConfig to QuizGenerationOptions
       const options: QuizGenerationOptions = {
         ...config,
         difficulty: this.getDifficultyLevel(config),
@@ -104,33 +93,35 @@ export class QuizGenerationFlow {
         topics: [topic],
       };
 
-      console.log(`Starting quiz generation for topic: ${topic}`);
-
       // Step 1: Comprehensive Research
-      console.log('Step 1: Performing comprehensive research...');
       const analysis = await this.comprehensiveResearch.analyze(topic);
       
-      // Step 2: Generate questions for main topic and subtopics
-      console.log('Step 2: Generating questions...');
-      const mainTopicCount = Math.ceil((options.numberOfQuestions || 5) * 0.4); // 40% for main topic
-      const subtopicCount = Math.floor((options.numberOfQuestions || 5) * 0.6); // 60% for subtopics
+      // Step 2: Generate main topic questions
+      const mainTopicCount = Math.ceil((options.numberOfQuestions || 5) * 0.4);
+      const subtopicCount = Math.floor((options.numberOfQuestions || 5) * 0.6);
 
-      // Generate main topic questions
-      const mainQuiz = await this.quizGenerator.generateFromSearchResults(topic, {
-        analysisResults: {
-         
-          mainSummary: analysis.contextAnalysis.keyConcepts[0].description,
-          importantPoints: analysis.contextAnalysis.keyConcepts.map(c => c.description),
-          topicRelevanceScore: 1,
-          sourceQuality: {
-            credibility: 1,
-            recency: 1,
-            diversity: 1
-          },
-          recommendations: analysis.contextAnalysis.suggestedTopics
+      const mainTopicAnalysis = {
+        mainSummary: analysis.contextAnalysis.keyConcepts[0].description,
+        importantPoints: analysis.contextAnalysis.keyConcepts.map(c => c.description),
+        topicRelevanceScore: 1,
+        sourceQuality: {
+          credibility: 1,
+          recency: 1,
+          diversity: 1
         },
+        recommendations: analysis.contextAnalysis.suggestedTopics || []
+      };
+
+      const mainQuiz = await this.quizGenerator.generate(topic, {
+        multipleChoiceCount: Math.ceil(mainTopicCount * config.typeDistribution.multipleChoice),
+        codingQuestionCount: Math.ceil(mainTopicCount * config.typeDistribution.coding),
+        questionCount: mainTopicCount,
         difficulty: options.difficulty,
-        questionCount: mainTopicCount
+        difficultyDistribution: this.getDifficultyDistribution(options.difficulty),
+        typeDistribution: config.typeDistribution,
+        includeHints: config.includeHints,
+        maxAttempts: config.maxAttempts,
+        analysisResults: mainTopicAnalysis
       });
 
       // Generate subtopic questions
@@ -138,18 +129,28 @@ export class QuizGenerationFlow {
       const questionsPerSubtopic = Math.max(1, Math.floor(subtopicCount / analysis.subtopicAnalyses.length));
       
       for (const subtopic of analysis.subtopicAnalyses) {
-        const subtopicQuiz = await this.quizGenerator.generateFromSearchResults(
+        const subtopicQuiz = await this.quizGenerator.generate(
           `${topic} ${subtopic.name}`,
           {
-            analysisResults: {
-              mainSummary: subtopic.searchAnalysis.mainSummary,
-              importantPoints: subtopic.searchAnalysis.importantPoints,
-              topicRelevanceScore: subtopic.searchAnalysis.topicRelevanceScore,
-              sourceQuality: subtopic.searchAnalysis.sourceQuality,
-              recommendations: subtopic.searchAnalysis.recommendations
-            },
+            multipleChoiceCount: Math.ceil(questionsPerSubtopic * config.typeDistribution.multipleChoice),
+            codingQuestionCount: Math.ceil(questionsPerSubtopic * config.typeDistribution.coding),
+            questionCount: questionsPerSubtopic,
             difficulty: options.difficulty,
-            questionCount: questionsPerSubtopic
+            difficultyDistribution: this.getDifficultyDistribution(options.difficulty),
+            typeDistribution: config.typeDistribution,
+            includeHints: config.includeHints,
+            maxAttempts: config.maxAttempts,
+            analysisResults: {
+              mainSummary: subtopic.searchAnalysis.mainSummary || '',
+              importantPoints: subtopic.searchAnalysis.importantPoints || [],
+              topicRelevanceScore: subtopic.searchAnalysis.topicRelevanceScore || 1,
+              sourceQuality: subtopic.searchAnalysis.sourceQuality || {
+                credibility: 1,
+                recency: 1,
+                diversity: 1
+              },
+              recommendations: subtopic.searchAnalysis.recommendations || []
+            }
           }
         );
         subtopicQuestions.push(...this.convertQuestions(subtopicQuiz.questions));
@@ -180,9 +181,34 @@ export class QuizGenerationFlow {
       } as Quiz;
 
       // Evaluate the quiz
+      console.log('\n🔍 Starting Quiz Evaluation...');
       const quizEvaluation = await this.evaluateQuiz(finalQuiz, topic);
+      console.log('\n📊 Quiz Evaluation Results:');
+      console.log(`Overall Score: ${quizEvaluation.score.toFixed(2)}`);
+      console.log('Feedback Categories:');
+      console.log(`- Coverage: ${quizEvaluation.feedback.coverage.toFixed(2)}`);
+      console.log(`- Difficulty Balance: ${quizEvaluation.feedback.difficulty.toFixed(2)}`);
+      console.log(`- Clarity: ${quizEvaluation.feedback.clarity.toFixed(2)}`);
+      console.log(`- Quality: ${quizEvaluation.feedback.quality.toFixed(2)}`);
 
-      // Save the session with the evaluation
+      if (quizEvaluation.issues.length > 0) {
+        console.log('\n⚠️ Issues Found:');
+        quizEvaluation.issues.forEach(issue => {
+          console.log(`- [${issue.severity.toUpperCase()}] ${issue.description}`);
+        });
+      }
+
+      if (quizEvaluation.suggestions.length > 0) {
+        console.log('\n💡 Suggestions for Improvement:');
+        quizEvaluation.suggestions.forEach(suggestion => {
+          console.log(`- ${suggestion}`);
+        });
+      }
+
+      // Save the quiz
+      await this.memory.saveQuiz(finalQuiz);
+
+      // Save the session with evaluation
       await this.saveQuizSession(finalQuiz, topic, analysis.contextAnalysis, quizEvaluation);
 
       return finalQuiz;
@@ -203,57 +229,41 @@ export class QuizGenerationFlow {
 
   private async saveQuizSession(quiz: Quiz, topic: string, context: any, evaluation: QuizEvaluation): Promise<void> {
     try {
-      // Create a session object
-      const session: QuizSession = {
-        id: quiz.id,
-        quiz,
-        topic,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        similarTopics: context.suggestedTopics || [],
-        evaluation: evaluation // Use evaluation directly since we now have it in the interface
+      // Create basic session first
+      const session = await this.memory.createSession(topic, quiz);
+      
+      // Get prompt history
+      const promptHistory = await this.memory.getPromptHistory(topic);
+      
+      // Then update session with context, evaluation and prompt history
+      const sessionUpdates: Partial<QuizSession> = {
+        similarTopics: context?.suggestedTopics || [],
+        evaluation: evaluation,
+        promptHistory: promptHistory ? {
+          attempts: promptHistory.attempts,
+          successfulPrompts: promptHistory.successfulPrompts,
+          failedPrompts: promptHistory.failedPrompts,
+          averageScore: promptHistory.averageScore
+        } : undefined,
+        updatedAt: new Date()
       };
+      await this.memory.updateSession(session.id, sessionUpdates);
+      
+      // Save subtopics if available
+      if (context?.subtopics) {
+        await this.memory.saveSubtopics(session.id, context.subtopics);
+      }
 
-      // Save the session
-      await this.memory.saveSession(session);
-      
-      // Update the prompt history with this evaluation
-      await this.updatePromptHistoryWithEvaluation(topic, evaluation);
-      
-      console.log(`Quiz session saved with ID: ${quiz.id}`);
+      console.log(`Quiz session saved successfully. ID: ${session.id}`);
     } catch (error) {
       console.error('Error saving quiz session:', error);
+      throw error;
     }
   }
 
 
   private convertQuestions(questions: any[]): (MultipleChoiceQuestion | CodingQuestion)[] {
-    return questions.map(q => {
-      if (q.type === 'coding') {
-        return {
-          id: uuidv4(),
-          type: 'coding',
-          difficulty: q.difficulty,
-          text: q.text || q.question,
-          solution: q.solution || q.correctAnswer,
-          testCases: [],
-          severity: 'error',
-          explanation: q.explanation || ''
-        } as CodingQuestion;
-      } else {
-        return {
-          id: uuidv4(),
-          type: 'multiple-choice',
-          difficulty: q.difficulty,
-          text: q.text || q.question,
-          choices: (q.choices || q.options || []).map((opt: string, idx: number) => ({
-            id: uuidv4(),
-            text: opt,
-            isCorrect: idx === Number(q.correctAnswer)
-          }))
-        } as MultipleChoiceQuestion;
-      }
-    });
+    return questions;  // No conversion needed since questions are already in the correct format
   }
 
   /**
@@ -264,7 +274,8 @@ export class QuizGenerationFlow {
    */
   async evaluateQuiz(quiz: Quiz, topic: string): Promise<QuizEvaluation> {
     try {
-      // Get current evaluation result from the evaluator agent
+      console.log('\n=== Starting Detailed Quiz Evaluation ===');
+      
       const result = await this.quizEvaluator.evaluate(quiz, {
         strictMode: true,
         evaluationCriteria: {
@@ -275,7 +286,6 @@ export class QuizGenerationFlow {
         }
       });
       
-      // Map the EvaluationResult to QuizEvaluation
       const evaluation: QuizEvaluation = {
         quizId: quiz.id,
         score: result.overallScore,
@@ -297,45 +307,51 @@ export class QuizGenerationFlow {
         timestamp: new Date()
       };
 
-      // Create prompt feedback for the prompt builder agent
-      const promptFeedback: PromptFeedback = {
-        score: result.overallScore,
-        issues: this.extractIssuesFromResult(result),
-        suggestions: result.feedback.suggestions,
-        successfulElements: this.extractSuccessfulElementsFromResult(result)
-      };
-      
-      // Provide feedback to the prompt builder agent
-      const quizTopic = typeof topic === 'string' ? topic : 'unknown';
-      await this.promptBuilder.provideFeedback(quizTopic, promptFeedback);
-      
-      // Save this evaluation
-      await this.updateSessionWithEvaluation(quiz.id, evaluation);
-      
+      console.log('\n📝 Evaluation Details:');
+      console.log(`Quiz ID: ${evaluation.quizId}`);
+      console.log(`Overall Score: ${evaluation.score.toFixed(2)}`);
+      console.log('\nFeedback Breakdown:');
+      Object.entries(evaluation.feedback).forEach(([category, score]) => {
+        console.log(`${category}: ${score.toFixed(2)}`);
+      });
+
+      if (evaluation.issues.length > 0) {
+        console.log('\n⚠️ Identified Issues:');
+        evaluation.issues.forEach(issue => {
+          const severityIcon = {
+            low: '🟡',
+            medium: '🟠',
+            high: '🔴'
+          }[issue.severity] || '⚪';
+          console.log(`${severityIcon} [${issue.severity.toUpperCase()}] ${issue.description}`);
+        });
+      }
+
+      if (evaluation.suggestions.length > 0) {
+        console.log('\n💡 Improvement Suggestions:');
+        evaluation.suggestions.forEach((suggestion, index) => {
+          console.log(`${index + 1}. ${suggestion}`);
+        });
+      }
+
+      console.log('\n=== End of Detailed Quiz Evaluation ===\n');
+
+      // Store feedback for prompt improvement
+      await this.quizEvaluator.provideFeedback(topic, quiz, {
+        strictMode: true,
+        evaluationCriteria: {
+          technicalAccuracy: true,
+          difficultyBalance: true,
+          clarity: true,
+          coverage: true,
+          promptQuality: true
+        }
+      });
+
       return evaluation;
     } catch (error) {
-      console.error('Error evaluating quiz:', error);
-      
-      // Return a basic evaluation in case of failure
-      return {
-        quizId: quiz.id,
-        score: 0.5,
-        feedback: {
-          coverage: 0.5,
-          difficulty: 0.5,
-          uniqueness: 0.5,
-          clarity: 0.5,
-          practicality: 0.5,
-          quality: 0.5
-        },
-        issues: [{
-          type: 'system',
-          description: 'Failed to evaluate quiz properly',
-          severity: 'high'
-        }],
-        suggestions: ['Try generating a new quiz'],
-        timestamp: new Date()
-      };
+      console.error('Failed to evaluate quiz:', error);
+      throw error;
     }
   }
 
@@ -343,7 +359,7 @@ export class QuizGenerationFlow {
   private extractCriteriaScore(result: EvaluationResult, criteriaName: string): number {
     // Add null/undefined checks for all properties
     if (!result || !result.metadata || !result.metadata.criteriaUsed || !Array.isArray(result.metadata.criteriaUsed)) {
-      console.log(`Missing metadata.criteriaUsed for criteria: ${criteriaName}`);
+      // console.log(`Missing metadata.criteriaUsed for criteria: ${criteriaName}`);
       return 0.8; // Return default score
     }
     
@@ -374,7 +390,7 @@ export class QuizGenerationFlow {
   private calculateQualityScore(result: EvaluationResult): number {
     // Add null/undefined check for questionEvaluations
     if (!result || !result.questionEvaluations || !Array.isArray(result.questionEvaluations)) {
-      console.log('Missing questionEvaluations in calculateQualityScore');
+      // console.log('Missing questionEvaluations in calculateQualityScore');
       return 0.7; // Default quality score
     }
     
@@ -466,21 +482,28 @@ export class QuizGenerationFlow {
   // Add this method to update prompt history with evaluations
   private async updatePromptHistoryWithEvaluation(topic: string, evaluation: QuizEvaluation): Promise<void> {
     try {
+      console.log(`Updating prompt history for topic: ${topic}`);
+      
       // Get existing history or create a new one
       let history = await this.memory.getPromptHistory(topic) || {
+        topic,
         attempts: 0,
         successfulPrompts: [],
         failedPrompts: [],
-        averageScore: 0
+        averageScore: 0,
+        createdAt: new Date(),
+        updatedAt: new Date()
       };
       
       // Update history
       history.attempts++;
+      history.updatedAt = new Date();
       
       // Create a prompt feedback object from the evaluation
       const promptFeedback: QuizPromptFeedback = {
-        prompt: '', // Will be filled by the prompt builder
+        prompt: await this.promptBuilder.getLastGeneratedPrompt(topic),
         score: evaluation.score,
+        timestamp: new Date(),
         feedback: {
           strengths: evaluation.feedback.quality >= 0.7 ? ['Good quality questions'] : [],
           weaknesses: evaluation.issues.map(issue => issue.description),
@@ -491,8 +514,10 @@ export class QuizGenerationFlow {
       // Add to successful or failed prompts
       if (evaluation.score >= 0.7) {
         history.successfulPrompts.push(promptFeedback);
+        console.log(`Added successful prompt with score: ${evaluation.score}`);
       } else {
         history.failedPrompts.push(promptFeedback);
+        console.log(`Added failed prompt with score: ${evaluation.score}`);
       }
       
       // Calculate new average score
@@ -501,13 +526,61 @@ export class QuizGenerationFlow {
       
       // Save updated history
       await this.memory.savePromptHistory(topic, history);
+      console.log(`Successfully updated prompt history for topic: ${topic}`);
+      console.log(`New average score: ${history.averageScore}`);
+      console.log(`Total attempts: ${history.attempts}`);
     } catch (error) {
       console.error('Error updating prompt history with evaluation:', error);
+      throw error; // Re-throw to handle at higher level
     }
   }
 
   // Thêm phương thức để truy cập MemoryService từ bên ngoài
   public getMemoryService(): MemoryService {
     return this.memory;
+  }
+
+  private getDifficultyDistribution(difficulty: 'basic' | 'intermediate' | 'advanced'): DifficultyDistribution {
+    const distributions: { [key: string]: DifficultyDistribution } = {
+      basic: { basic: 60, intermediate: 30, advanced: 10 },
+      intermediate: { basic: 30, intermediate: 50, advanced: 20 },
+      advanced: { basic: 10, intermediate: 40, advanced: 50 }
+    };
+    return distributions[difficulty] || distributions.intermediate;
+  }
+
+  private async buildQuizConfig(topic: string, subtopic: SubtopicAnalysis): Promise<QuizGenerationConfig> {
+    const defaultSourceQuality = {
+      credibility: 0.5,
+      recency: 0.5,
+      diversity: 0.5
+    };
+
+    const config: QuizGenerationConfig = {
+      multipleChoiceCount: Math.round(this.DEFAULT_QUESTIONS_PER_SUBTOPIC * 0.7),
+      codingQuestionCount: Math.round(this.DEFAULT_QUESTIONS_PER_SUBTOPIC * 0.3),
+      questionCount: this.DEFAULT_QUESTIONS_PER_SUBTOPIC,
+      difficulty: subtopic.difficulty || 'intermediate',
+      difficultyDistribution: this.getDifficultyDistribution(subtopic.difficulty || 'intermediate'),
+      typeDistribution: {
+        multipleChoice: 0.7,
+        coding: 0.3
+      },
+      includeHints: true,
+      maxAttempts: 3
+    };
+
+    // Only add analysisResults if we have valid data
+    if (subtopic.searchAnalysis) {
+      config.analysisResults = {
+        mainSummary: subtopic.searchAnalysis.mainSummary || '',
+        importantPoints: subtopic.searchAnalysis.importantPoints || [],
+        topicRelevanceScore: subtopic.searchAnalysis.topicRelevanceScore || 0.5,
+        sourceQuality: subtopic.searchAnalysis.sourceQuality || defaultSourceQuality,
+        recommendations: subtopic.searchAnalysis.recommendations || []
+      };
+    }
+
+    return config;
   }
 } 

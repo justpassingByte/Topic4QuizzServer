@@ -162,9 +162,10 @@ export class ModelAdapterService {
     
     try {
       const requestBody = this.buildHuggingFaceRequest(options, modelFamily);
+      console.log('Request body:', JSON.stringify(requestBody, null, 2));
       
       const headers = {
-        'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+        'Authorization': `Bearer ${this.apiKeyService.getCurrentKey()}`,
         'Content-Type': 'application/json'
       };
 
@@ -174,8 +175,13 @@ export class ModelAdapterService {
         { headers }
       );
 
+      // console.log('Raw response from Hugging Face:', JSON.stringify(response.data, null, 2));
+
       let content = this.parseHuggingFaceResponse(response.data, options, modelFamily);
+      // console.log('Parsed response:', content);
+      
       content = this.cleanupModelResponse(content, options);
+      // console.log('Cleaned response:', content);
 
       // Reset model index on successful call
       this.currentModelIndex = 0;
@@ -187,6 +193,11 @@ export class ModelAdapterService {
       };
     } catch (error) {
       if (axios.isAxiosError(error)) {
+        console.error('Hugging Face API error details:', {
+          status: error.response?.status,
+          data: error.response?.data,
+          message: error.message
+        });
         if (error.response?.status === 503) {
           console.log('Model is loading, waiting and retrying...');
           throw new Error('MODEL_LOADING');
@@ -203,15 +214,35 @@ export class ModelAdapterService {
       parameters: {
         max_new_tokens: options.maxTokens || 2048,
         temperature: options.temperature || 0.7,
-        return_full_text: false
+        return_full_text: false,
+        do_sample: true,
+        top_p: 0.95,
+        top_k: 50
       }
     };
 
     // Add model-specific parameters
+    let finalRequest;
     switch (modelFamily) {
+      case ModelFamily.MIXTRAL:
+        finalRequest = {
+          ...baseRequest,
+          parameters: {
+            ...baseRequest.parameters,
+            temperature: options.temperature || 0.3,
+            top_p: 0.98,
+            top_k: 50,
+            repetition_penalty: 1.15,
+            max_new_tokens: options.maxTokens || 4096,
+            return_full_text: false,
+            stop: ["}"],
+            do_sample: true
+          }
+        };
+        break;
       case ModelFamily.LLAMA:
       case ModelFamily.QWEN:
-        return {
+        finalRequest = {
           ...baseRequest,
           parameters: {
             ...baseRequest.parameters,
@@ -221,8 +252,9 @@ export class ModelAdapterService {
             repetition_penalty: 1.1
           }
         };
+        break;
       case ModelFamily.BERT:
-        return {
+        finalRequest = {
           ...baseRequest,
           parameters: {
             ...baseRequest.parameters,
@@ -232,8 +264,9 @@ export class ModelAdapterService {
             truncation: true
           }
         };
+        break;
       case ModelFamily.GPT:
-        return {
+        finalRequest = {
           ...baseRequest,
           parameters: {
             ...baseRequest.parameters,
@@ -244,27 +277,114 @@ export class ModelAdapterService {
             length_penalty: 1.0
           }
         };
+        break;
       default:
-        return baseRequest;
+        finalRequest = baseRequest;
     }
+    
+    console.log(`Built request for ${modelFamily}:`, JSON.stringify(finalRequest, null, 2));
+    return finalRequest;
   }
 
   private parseHuggingFaceResponse(data: any, options: ModelRequestOptions, modelFamily: ModelFamily): string {
+    // console.log('Parsing Hugging Face response. Data type:', typeof data);
+    // console.log('Response data:', JSON.stringify(data, null, 2));
+    
     try {
       if (Array.isArray(data)) {
+        // console.log('Response is an array');
         if (data[0]?.generated_text) {
-          return data[0].generated_text;
+          let text = data[0].generated_text;
+          // console.log('Found generated_text:', text);
+          
+          // For quiz generation, try to extract JSON content
+          const jsonStart = text.indexOf('{');
+          const jsonEnd = text.lastIndexOf('}');
+          if (jsonStart !== -1 && jsonEnd !== -1) {
+            text = text.substring(jsonStart, jsonEnd + 1);
+            // console.log('Extracted JSON content:', text);
+            try {
+              // Validate JSON structure
+              const parsed = JSON.parse(text);
+              if (parsed.questions || Array.isArray(parsed)) {
+                // console.log('Valid quiz format detected');
+                return text;
+              }
+            } catch (e) {
+              // console.log('JSON validation failed, using raw text');
+            }
+          }
+          
+          // Check for array format
+          const arrayStart = text.indexOf('[');
+          const arrayEnd = text.lastIndexOf(']');
+          if (arrayStart !== -1 && arrayEnd !== -1) {
+            text = text.substring(arrayStart, arrayEnd + 1);
+            // console.log('Extracted array content:', text);
+            try {
+              // Validate array structure
+              const parsed = JSON.parse(text);
+              if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].question) {
+                // console.log('Valid quiz array format detected');
+                return text;
+              }
+            } catch (e) {
+              // console.log('Array validation failed, using raw text');
+            }
+          }
+          
+          return text;
         }
         return data[0] || '';
       }
       
       if (typeof data === 'object') {
-        return data.generated_text || data.content || JSON.stringify(data);
+        // console.log('Response is an object');
+        const content = data.generated_text || data.content || JSON.stringify(data);
+        // console.log('Content before processing:', content);
+        
+        // Try to extract and validate JSON content
+        const jsonStart = content.indexOf('{');
+        const jsonEnd = content.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          const extracted = content.substring(jsonStart, jsonEnd + 1);
+          // console.log('Extracted JSON from object:', extracted);
+          try {
+            const parsed = JSON.parse(extracted);
+            if (parsed.questions || Array.isArray(parsed)) {
+              // console.log('Valid quiz format detected in object');
+              return extracted;
+            }
+          } catch (e) {
+            // console.log('JSON validation failed for object, using raw content');
+          }
+        }
+        
+        // Check for array format
+        const arrayStart = content.indexOf('[');
+        const arrayEnd = content.lastIndexOf(']');
+        if (arrayStart !== -1 && arrayEnd !== -1) {
+          const extracted = content.substring(arrayStart, arrayEnd + 1);
+          // console.log('Extracted array from object:', extracted);
+          try {
+            const parsed = JSON.parse(extracted);
+            if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].question) {
+              console.log('Valid quiz array format detected in object');
+              return extracted;
+            }
+          } catch (e) {
+            console.log('Array validation failed for object, using raw content');
+          }
+        }
+        
+        return content;
       }
       
+      console.log('Response is neither array nor object, converting to string');
       return String(data);
     } catch (error) {
       console.error('Error parsing Hugging Face response:', error);
+      console.error('Original data:', data);
       return String(data);
     }
   }

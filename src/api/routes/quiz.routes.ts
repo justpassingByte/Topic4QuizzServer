@@ -5,16 +5,15 @@ import { ModelConfigService } from '../../services/model-config.service';
 const router = Router();
 const quizController = new QuizController(new ModelConfigService());
 
-// Create a new quiz
-router.post('/quizzes', quizController.createQuiz);
+// Health check
+router.get('/health', quizController.healthCheck);
 
-// Get a quiz by ID
-router.get('/quizzes/:id', quizController.getQuiz);
-
-// Find quizzes by topic
-router.get('/quizzes/topic/:topic', quizController.findQuizzesByTopic);
-
-// Get quiz history by topic
-router.get('/quizzes/history/:topic', quizController.getTopicHistory);
+// Quiz routes
+router.post('/create', quizController.createQuiz);
+router.get('/quizzes', quizController.getAllQuizzes);
+router.get('/quizzes/topic/:topic', quizController.getQuizzesByTopic);
+router.get('/quizzes/subtopic/:subtopic', quizController.getQuizzesBySubtopic);
+router.get('/quizzes/:id', quizController.getQuizById);
+router.post('/quizzes/evaluate', quizController.evaluateQuiz);
 
 export default router; 

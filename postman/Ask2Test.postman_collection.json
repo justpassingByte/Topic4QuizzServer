@@ -24,57 +24,30 @@
       ]
     },
     {
-      "name": "Quiz Generation",
+      "name": "Quiz Management",
       "item": [
         {
-          "name": "Generate Quiz",
+          "name": "Create Quiz",
           "request": {
             "method": "POST",
             "url": {
-              "raw": "{{baseUrl}}/api/generate-quiz",
+              "raw": "{{baseUrl}}/api/create",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "generate-quiz"]
+              "path": ["api", "create"]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"topic\": \"JavaScript Promises\",\n  \"config\": {\n    \"multipleChoiceCount\": 5,\n    \"codingQuestionCount\": 2,\n    \"difficultyDistribution\": {\n      \"basic\": 0.3,\n      \"intermediate\": 0.5,\n      \"advanced\": 0.2\n    },\n    \"includeHints\": true,\n    \"maxAttempts\": 3\n  }\n}",
+              "raw": "{\n  \"topic\": \"JavaScript Promises\",\n  \"config\": {\n    \"multipleChoiceCount\": 5,\n    \"codingQuestionCount\": 2,\n    \"difficultyDistribution\": {\n      \"basic\": 0.3,\n      \"intermediate\": 0.5,\n      \"advanced\": 0.2\n    },\n    \"typeDistribution\": {\n      \"multipleChoice\": 0.7,\n      \"coding\": 0.3\n    },\n    \"includeHints\": true,\n    \"maxAttempts\": 3\n  },\n  \"level\": \"intermediate\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Generate a new quiz with specific configurations"
+            "description": "Create a new quiz with specific configurations or difficulty level"
           },
           "response": []
         },
-        {
-          "name": "Evaluate Quiz",
-          "request": {
-            "method": "POST",
-            "url": {
-              "raw": "{{baseUrl}}/api/evaluate-quiz",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "evaluate-quiz"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"quizId\": \"{{quizId}}\",\n  \"topic\": \"JavaScript Promises\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "Evaluate an existing quiz"
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Quiz Retrieval",
-      "item": [
         {
           "name": "Get All Quizzes",
           "request": {
@@ -106,11 +79,11 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{baseUrl}}/api/quizzes/topic/JavaScript Promises",
+              "raw": "{{baseUrl}}/api/quizzes/topic/{{topic}}",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "quizzes", "topic", "JavaScript Promises"]
+              "path": ["api", "quizzes", "topic", "{{topic}}"]
             },
-            "description": "Get quizzes for a specific topic - will return from cache if exists"
+            "description": "Get quizzes for a specific topic"
           },
           "response": []
         },
@@ -119,24 +92,33 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{baseUrl}}/api/quizzes/subtopic/Async Functions",
+              "raw": "{{baseUrl}}/api/quizzes/subtopic/{{subtopic}}",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "quizzes", "subtopic", "Async Functions"]
+              "path": ["api", "quizzes", "subtopic", "{{subtopic}}"]
             },
             "description": "Get quizzes for a specific subtopic"
           },
           "response": []
         },
         {
-          "name": "Get Topic History",
+          "name": "Evaluate Quiz",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "url": {
-              "raw": "{{baseUrl}}/api/quizzes/history/JavaScript",
+              "raw": "{{baseUrl}}/api/quizzes/evaluate",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "quizzes", "history", "JavaScript"]
+              "path": ["api", "quizzes", "evaluate"]
             },
-            "description": "Get quiz generation history for a specific topic"
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quizId\": \"{{quizId}}\",\n  \"topic\": \"JavaScript Promises\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Evaluate an existing quiz"
           },
           "response": []
         }
@@ -148,39 +130,66 @@
         {
           "name": "JavaScript Promises Quiz",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "url": {
-              "raw": "{{baseUrl}}/api/quizzes/topic/JavaScript Promises",
+              "raw": "{{baseUrl}}/api/quizzes",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "quizzes", "topic", "JavaScript Promises"]
+              "path": ["api", "quizzes"]
             },
-            "description": "Get quiz for JavaScript Promises"
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topic\": \"JavaScript Promises\",\n  \"level\": \"intermediate\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create quiz for JavaScript Promises using default intermediate config"
           },
           "response": []
         },
         {
           "name": "JavaScript Async/Await Quiz",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "url": {
-              "raw": "{{baseUrl}}/api/quizzes/topic/JavaScript Async/Await",
+              "raw": "{{baseUrl}}/api/quizzes",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "quizzes", "topic", "JavaScript Async/Await"]
+              "path": ["api", "quizzes"]
             },
-            "description": "Get quiz for Async/Await"
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topic\": \"JavaScript Async/Await\",\n  \"level\": \"intermediate\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create quiz for Async/Await using default intermediate config"
           },
           "response": []
         },
         {
           "name": "React Hooks Quiz",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "url": {
-              "raw": "{{baseUrl}}/api/quizzes/topic/React Hooks",
+              "raw": "{{baseUrl}}/api/quizzes",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "quizzes", "topic", "React Hooks"]
+              "path": ["api", "quizzes"]
             },
-            "description": "Get quiz for React Hooks"
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topic\": \"React Hooks\",\n  \"level\": \"beginner\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create quiz for React Hooks using default beginner config"
           },
           "response": []
         }
@@ -191,6 +200,18 @@
     {
       "key": "baseUrl",
       "value": "http://localhost:3000"
+    },
+    {
+      "key": "quizId",
+      "value": "your-quiz-id-here"
+    },
+    {
+      "key": "topic",
+      "value": "JavaScript Promises"
+    },
+    {
+      "key": "subtopic",
+      "value": "Async Functions"
     }
   ]
 } 

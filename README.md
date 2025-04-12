@@ -11,14 +11,63 @@ The main orchestrator that coordinates the entire quiz generation process:
 - Question generation
 - Quiz evaluation
 - Session management
+- Prompt history tracking and improvement
 
 ### 2. Agents
 - **Context Analyzer**: Analyzes topic context and complexity
 - **Research Agent**: Gathers information about topics
-- **Prompt Builder**: Creates optimized prompts for question generation
+- **Prompt Builder**: Creates and improves optimized prompts for question generation
 - **Quiz Generator**: Generates actual quiz questions
 - **Quiz Evaluator**: Evaluates quiz quality and provides feedback
 - **Search Analysis Agent**: Performs deep analysis of search results
+
+### 3. Prompt Improvement System
+The system includes an intelligent prompt improvement mechanism:
+
+#### Prompt History
+```typescript
+interface PromptHistory {
+  topic: string;
+  attempts: number;
+  successfulPrompts: PromptFeedback[];  // Prompts with score >= 0.7
+  failedPrompts: PromptFeedback[];      // Prompts with score < 0.7
+  averageScore: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface PromptFeedback {
+  prompt: string;
+  score: number;
+  timestamp: Date;
+  feedback: {
+    strengths: string[];
+    weaknesses: string[];
+    suggestions: string[];
+  }
+}
+```
+
+#### Improvement Mechanism
+1. **Automatic Improvement**:
+   - Prompts are evaluated after each quiz generation
+   - Successful prompts (score >= 0.7) are stored for future reference
+   - Failed prompts are analyzed to avoid similar patterns
+
+2. **Learning from Success**:
+   - System learns from successful prompt patterns
+   - High-performing prompts influence future generations
+   - Maintains a database of effective prompts per topic
+
+3. **Learning from Failure**:
+   - Failed prompts are analyzed for improvement
+   - System adapts based on evaluation feedback
+   - Continuous refinement of prompt strategies
+
+4. **Metrics Tracking**:
+   - Average success rate per topic
+   - Prompt effectiveness over time
+   - Topic-specific performance metrics
 
 ## How It Works
 
@@ -143,125 +192,185 @@ interface QuizGenerationConfig {
 }
 ```
 
-## API Endpoints
+## API Documentation
 
-The system exposes the following RESTful API endpoints:
+### Base URL
+```
+http://localhost:3000/api
+```
 
-### Quiz Generation and Evaluation
-- **POST /api/generate-quiz**: Generate a new quiz based on a topic and configuration
-  ```json
-  {
-    "topic": "JavaScript Promises",
-    "config": {
-      "multipleChoiceCount": 8,
-      "codingQuestionCount": 2,
-      "difficultyDistribution": {
-        "basic": 5,
-        "intermediate": 3,
-        "advanced": 2
-      },
-      "typeDistribution": {
-        "multipleChoice": 8,
-        "coding": 2
-      },
-      "includeHints": true,
-      "maxAttempts": 3
-    }
-  }
-  ```
+### Endpoints
 
-- **POST /api/evaluate-quiz**: Evaluate an existing quiz
-  ```json
-  {
-    "quizId": "quiz-123",
-    "topic": "JavaScript Promises"
-  }
-  ```
+#### Health Check
+```http
+GET /health
+```
+Returns the system health status and version.
 
-### Quiz Retrieval and Management
-- **GET /api/quizzes**: Get a list of all quizzes
-- **GET /api/quizzes/:id**: Get details of a specific quiz by ID
-- **GET /api/quizzes/topic/:topic**: Get quizzes related to a specific topic
-- **GET /api/quizzes/subtopic/:subtopic**: Get quizzes related to a specific subtopic
-
-### System Status
-- **GET /api/health**: Check system health and version
-
-## Example Usage
-
-```typescript
-// Initialize the Quiz Generation Flow
-const quizFlow = new QuizGenerationFlow();
-
-// Configure quiz parameters
-const config = {
-  multipleChoiceCount: 8,
-  codingQuestionCount: 2,
-  difficultyDistribution: {
-    basic: 4,
-    intermediate: 4,
-    advanced: 2
-  },
-  typeDistribution: {
-    multipleChoice: 8,
-    coding: 2
-  },
-  includeHints: true,
-  maxAttempts: 3
-};
-
-// Generate a quiz
-try {
-  const quiz = await quizFlow.generateQuiz("JavaScript Promises", config);
-  console.log(`Generated quiz with ${quiz.questions.length} questions`);
-  
-  // Evaluate the quiz
-  const evaluation = await quizFlow.evaluateQuiz(quiz);
-  console.log(`Quiz quality score: ${evaluation.score}`);
-} catch (error) {
-  console.error("Error generating quiz:", error);
+Response:
+```json
+{
+  "status": "ok",
+  "version": "1.0.0"
 }
 ```
 
-## Using the API
+#### Quiz Management
+
+1. **Create Quiz**
+```http
+POST /create
+```
+Create a new quiz with specified topic and configuration.
+
+Request body:
+```json
+{
+  "topic": "JavaScript Promises",
+  "config": {
+    "multipleChoiceCount": 8,
+    "codingQuestionCount": 2,
+    "difficultyDistribution": {
+      "basic": 5,
+      "intermediate": 3,
+      "advanced": 2
+    },
+    "typeDistribution": {
+      "multipleChoice": 8,
+      "coding": 2
+    },
+    "includeHints": true,
+    "maxAttempts": 3
+  }
+}
+```
+
+2. **Get All Quizzes**
+```http
+GET /quizzes
+```
+Returns a list of all available quizzes.
+
+3. **Get Quiz by ID**
+```http
+GET /quizzes/:id
+```
+Returns details of a specific quiz.
+
+4. **Get Quizzes by Topic**
+```http
+GET /quizzes/topic/:topic
+```
+Returns all quizzes related to a specific topic.
+
+5. **Get Quizzes by Subtopic**
+```http
+GET /quizzes/subtopic/:subtopic
+```
+Returns all quizzes related to a specific subtopic.
+
+6. **Evaluate Quiz**
+```http
+POST /quizzes/evaluate
+```
+Evaluate an existing quiz.
+
+Request body:
+```json
+{
+  "quizId": "quiz-123",
+  "topic": "JavaScript Promises"
+}
+```
+
+### Using the API
 
 ```javascript
-// Generate a new quiz
-async function generateQuiz() {
-  const response = await fetch('http://localhost:3000/api/generate-quiz', {
+const API_BASE_URL = 'http://localhost:3000/api';
+
+// Create a new quiz
+async function createQuiz(topic, config) {
+  const response = await fetch(`${API_BASE_URL}/quizzes`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      topic: 'JavaScript Promises',
-      config: {
-        multipleChoiceCount: 8,
-        codingQuestionCount: 2,
-        difficultyDistribution: {
-          basic: 5,
-          intermediate: 3,
-          advanced: 2
-        }
-      }
-    })
+    body: JSON.stringify({ topic, config })
   });
-  
-  const quiz = await response.json();
-  console.log(`Generated quiz with ${quiz.questions.length} questions`);
-  return quiz;
+  return await response.json();
 }
 
-// Get a specific quiz
-async function getQuiz(quizId) {
-  const response = await fetch(`http://localhost:3000/api/quizzes/${quizId}`);
+// Get all quizzes
+async function getAllQuizzes() {
+  const response = await fetch(`${API_BASE_URL}/quizzes`);
+  return await response.json();
+}
+
+// Get quiz by ID
+async function getQuizById(id) {
+  const response = await fetch(`${API_BASE_URL}/quizzes/${id}`);
   return await response.json();
 }
 
 // Get quizzes by topic
 async function getQuizzesByTopic(topic) {
-  const response = await fetch(`http://localhost:3000/api/quizzes/topic/${encodeURIComponent(topic)}`);
+  const response = await fetch(`${API_BASE_URL}/quizzes/topic/${encodeURIComponent(topic)}`);
   return await response.json();
+}
+
+// Get quizzes by subtopic
+async function getQuizzesBySubtopic(subtopic) {
+  const response = await fetch(`${API_BASE_URL}/quizzes/subtopic/${encodeURIComponent(subtopic)}`);
+  return await response.json();
+}
+
+// Evaluate a quiz
+async function evaluateQuiz(quizId, topic) {
+  const response = await fetch(`${API_BASE_URL}/quizzes/evaluate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ quizId, topic })
+  });
+  return await response.json();
+}
+
+// Example usage
+async function example() {
+  try {
+    // Create a new quiz
+    const newQuiz = await createQuiz('JavaScript Promises', {
+      multipleChoiceCount: 8,
+      codingQuestionCount: 2,
+      difficultyDistribution: {
+        basic: 4,
+        intermediate: 4,
+        advanced: 2
+      },
+      typeDistribution: {
+        multipleChoice: 8,
+        coding: 2
+      },
+      includeHints: true,
+      maxAttempts: 3
+    });
+    console.log('Created quiz:', newQuiz);
+
+    // Get all quizzes
+    const allQuizzes = await getAllQuizzes();
+    console.log('All quizzes:', allQuizzes);
+
+    // Get quizzes by topic
+    const topicQuizzes = await getQuizzesByTopic('JavaScript');
+    console.log('JavaScript quizzes:', topicQuizzes);
+
+    // Evaluate a quiz
+    const evaluation = await evaluateQuiz(newQuiz.id, 'JavaScript Promises');
+    console.log('Quiz evaluation:', evaluation);
+  } catch (error) {
+    console.error('Error:', error);
+  }
 }
 ```
 
@@ -317,14 +426,19 @@ try {
 - Optimizes prompt generation based on historical performance
 - Maintains session history for improved generation
 - Adapts to feedback and evaluation results
+- Implements prompt versioning for tracking improvements
+- Uses machine learning to identify successful prompt patterns
+- Maintains separate prompt histories for different difficulty levels
 
 ## Recent Improvements
 
-- Added support for separately evaluating existing quizzes
+- Added prompt improvement system with historical tracking
+- Enhanced prompt evaluation metrics
+- Implemented automatic prompt optimization
+- Added support for topic-specific prompt patterns
 - Enhanced error handling and null checks for improved reliability
 - Optimized quiz storage with updatedAt timestamps and evaluation metrics
 - Improved content extraction for better analysis results
-- Reorganized API endpoints to avoid route conflicts
 - Added support for finding quizzes by topics and subtopics
 
 ## Environment Setup

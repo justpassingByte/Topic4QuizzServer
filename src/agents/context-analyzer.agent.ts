@@ -31,7 +31,7 @@ export class ContextAnalyzer {
   }
 
   async analyze(topic: string): Promise<ContextAnalysisData> {
-    console.log(`ANALYZER: Starting analysis for topic "${topic}"...`);
+    // console.log(`ANALYZER: Starting analysis for topic "${topic}"...`);
     return this.analyzeContext(topic, topic);
   }
 
@@ -39,14 +39,9 @@ export class ContextAnalyzer {
     content: string,
     topic: string
   ): Promise<ContextAnalysisData> {
-    console.log('=== ANALYZING CONTEXT ===');
+    // console.log('=== ANALYZING CONTEXT ===');
     
     try {
-      // Clean content to prevent prompt injection and limit size
-      // const cleanedContent = this.cleanContent(content);
-      // console.log('Cleaned content (first 200 chars):', 
-      //   cleanedContent.substring(0, 200) + (cleanedContent.length > 200 ? '...' : ''));
-      console.log(content);
       const prompt = `${CONTEXT_ANALYZER_PROMPT}
       
 Context: 
@@ -54,7 +49,23 @@ ${content}
 
 Topic: ${topic}
 
-Produce only valid JSON following the structure above. Do not include comments, explanations, or additional text.`;
+Return a VALID JSON object with this exact structure:
+{
+  "keyConcepts": [
+    {
+      "name": string,
+      "description": string,
+      "relationships": string[],
+      "prerequisites": string[]
+    }
+  ],
+  "suggestedTopics": string[],
+  "difficulty": "basic" | "intermediate" | "advanced",
+  "estimatedTime": number,
+  "keyAreas": string[]
+}
+
+Do not include any text outside the JSON. Ensure the JSON is properly formatted with all required fields.`;
 
       const modelConfig = this.modelConfigService.getModelConfigForAgent(AgentType.CONTEXT_ANALYZER);
       
@@ -65,30 +76,83 @@ Produce only valid JSON following the structure above. Do not include comments, 
         maxTokens: 1000,
         temperature: 0.3
       });
-      
-      // Parse the response
-      const analysisData = this.modelAdapter.parseJSON<ContextAnalysisData>(response.content);
-      
-      // Log basic details about what was found
-      console.log('=== PARSED CONTEXT ANALYSIS ===');
-      if (analysisData) {
-        console.log('Key Concepts:', analysisData.keyConcepts?.length || 0);
-        console.log('Concepts:', analysisData.keyConcepts?.filter(c => !!c.name).length || 0);
-        console.log('Difficulty:', analysisData.difficulty || 'unknown');
-        console.log('Prerequisites Count:', analysisData.keyConcepts?.reduce((acc, c) => acc + (c.prerequisites?.length || 0), 0) || 0);
-        console.log('Suggested Topics:', analysisData.suggestedTopics?.length || 0);
-        console.log('Key Areas:', analysisData.keyAreas?.length || 0);
-        console.log('Estimated Time:', analysisData.estimatedTime || 'unknown');
-        
-        return this.ensureValidAnalysis(analysisData, topic);
-      } else {
-        // Create a basic analysis if null
-        return this.createFallbackAnalysis(topic, '');
+
+      // Extract JSON from Hugging Face response
+      let jsonContent = '';
+      try {
+        const huggingFaceResponse = JSON.parse(response.content);
+        if (Array.isArray(huggingFaceResponse) && huggingFaceResponse[0]?.generated_text) {
+          const text = huggingFaceResponse[0].generated_text;
+          // Extract JSON from markdown code block
+          const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+          if (match) {
+            jsonContent = match[1].trim();
+          }
+        }
+      } catch (e) {
+        // If not a Hugging Face response, use raw content
+        jsonContent = response.content;
       }
+      // Fix malformed JSON
+      if (!jsonContent.includes('"keyConcepts"')) {
+        // Check if content is just an array of concepts
+        if (jsonContent.trim().startsWith('{') && jsonContent.includes('"name"')) {
+          // Convert to proper format
+          jsonContent = `{
+            "keyConcepts": [${jsonContent}],
+            "suggestedTopics": [],
+            "difficulty": "intermediate",
+            "estimatedTime": 30,
+            "keyAreas": []
+          }`;
+        }
+      }
+
+      // Clean up any formatting issues
+      jsonContent = jsonContent
+        .replace(/},\s*}/g, '}}')  // Fix extra comma before closing brace
+        .replace(/},\s*(?=})/g, '}')  // Fix trailing comma in objects
+        .replace(/\}\s*,\s*(?!\s*[\{\[])/g, '}'); // Fix invalid commas between objects
+
+      // console.log('=== CLEANED JSON CONTENT ===');
+      // console.log(jsonContent);
+
+      try {
+        // Parse the JSON content
+        const analysisData = JSON.parse(jsonContent) as ContextAnalysisData;
+        
+        // Log parsed data
+        // console.log('=== PARSED CONTEXT ANALYSIS ===');
+        if (analysisData && analysisData.keyConcepts) {
+          // console.log('Key Concepts found:', analysisData.keyConcepts.length);
+          // console.log('Analysis Data:', JSON.stringify(analysisData, null, 2));
+          return this.ensureValidAnalysis(analysisData, topic);
+        }
+      } catch (parseError) {
+        console.error('Parse error:', parseError);
+        // Try to extract concepts array
+        try {
+          const conceptsMatch = jsonContent.match(/\[\s*(\{[\s\S]*\})\s*\]/);
+          if (conceptsMatch) {
+            const concepts = JSON.parse(`[${conceptsMatch[1]}]`);
+            const analysisData: ContextAnalysisData = {
+              keyConcepts: concepts,
+              suggestedTopics: [],
+              difficulty: 'intermediate',
+              estimatedTime: 30,
+              keyAreas: concepts.map((c: { name: string }) => c.name)
+            };
+            return this.ensureValidAnalysis(analysisData, topic);
+          }
+        } catch (e) {
+          console.error('Failed to extract concepts:', e);
+        }
+      }
+      
+      console.log('No valid analysis data found, using fallback');
+      return this.createFallbackAnalysis(topic, '');
     } catch (error) {
       console.error('Context analysis failed:', error);
-      
-      // Return a minimal valid response
       return this.createFallbackAnalysis(topic, '');
     }
   }
