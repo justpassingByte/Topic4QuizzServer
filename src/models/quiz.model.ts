@@ -168,6 +168,53 @@ export interface QuizEvaluation {
   timestamp: Date;
 }
 
+export interface QuizFeedback {
+  id: string;
+  quizId: string;
+  userId?: string;
+  isFromAdmin: boolean;
+  overallRating: number; // 1-5 scale
+  contentAccuracy: number; // 1-5 scale
+  questionClarity: number; // 1-5 scale
+  comments: string;
+  questionFeedback: Array<{
+    questionId: string;
+    isCorrect: boolean;
+    comments: string;
+    suggestedChanges?: string;
+  }>;
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
+export interface QuizRevision {
+  id: string;
+  quizId: string;
+  revisionNumber: number;
+  changedBy: string;
+  changes: Array<{
+    questionId: string;
+    fieldChanged: string;
+    oldValue: string;
+    newValue: string;
+  }>;
+  reason: string;
+  createdAt: Date;
+}
+
+export interface QuizUpdateSchedule {
+  id: string;
+  quizId: string;
+  topic: string;
+  scheduledDate: Date;
+  reason: string;
+  isCompleted: boolean;
+  priority: 'low' | 'medium' | 'high';
+  createdAt: Date;
+  updatedAt?: Date;
+  completedAt?: Date;
+}
+
 export interface QuizGenerationMetadata {
   attempts: number;
   context: {
