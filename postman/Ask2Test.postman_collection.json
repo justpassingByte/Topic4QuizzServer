@@ -49,6 +49,28 @@
           "response": []
         },
         {
+          "name": "Create Quiz with User ID",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "create"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topic\": \"JavaScript Promises\",\n  \"userId\": \"{{userId}}\",\n  \"difficulty\": \"intermediate\",\n  \"numQuestions\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a quiz with personalization based on user ID"
+          },
+          "response": []
+        },
+        {
           "name": "Get All Quizzes",
           "request": {
             "method": "GET",
@@ -125,6 +147,184 @@
       ]
     },
     {
+      "name": "User Management",
+      "item": [
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"johndoe\",\n  \"email\": \"john@example.com\",\n  \"favoriteTopics\": [\"JavaScript\", \"React\", \"TypeScript\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a new user with favorite topics"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}"]
+            },
+            "description": "Get user details by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Favorite Topics - Add",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/topics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "topics"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topics\": [\"Node.js\", \"Express\"],\n  \"action\": \"add\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Add topics to user's favorites"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Favorite Topics - Remove",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/topics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "topics"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topics\": [\"TypeScript\"],\n  \"action\": \"remove\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Remove topics from user's favorites"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Favorite Topics - Replace All",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/topics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "topics"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topics\": [\"Python\", \"Machine Learning\", \"Data Science\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Replace all favorite topics"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Personalization",
+      "item": [
+        {
+          "name": "Get Personalized Quizzes",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/quizzes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "quizzes"]
+            },
+            "description": "Get quizzes personalized for a user based on their favorite topics"
+          },
+          "response": []
+        },
+        {
+          "name": "Save Quiz Result",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/quiz-results",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "quiz-results"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"quizId\": \"{{quizId}}\",\n  \"topic\": \"JavaScript Promises\",\n  \"score\": 0.85,\n  \"correctAnswers\": 8,\n  \"totalQuestions\": 10,\n  \"difficultyBreakdown\": {\n    \"basic\": {\n      \"correct\": 4,\n      \"total\": 5\n    },\n    \"intermediate\": {\n      \"correct\": 3,\n      \"total\": 3\n    },\n    \"advanced\": {\n      \"correct\": 1,\n      \"total\": 2\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Save a user's quiz result for personalization"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Statistics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/statistics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "statistics"]
+            },
+            "description": "Get comprehensive learning statistics for a user"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Topic Recommendations",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/recommendations?limit=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "recommendations"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "Get topic recommendations based on user's favorites and history"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Example Topics",
       "item": [
         {
@@ -194,6 +394,514 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Personalization Workflows",
+      "item": [
+        {
+          "name": "1. Create New User",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"testuser\",\n  \"email\": \"test@example.com\",\n  \"favoriteTopics\": [\"JavaScript\", \"React\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a test user for the personalization workflow"
+          },
+          "response": []
+        },
+        {
+          "name": "2. Save Variable - userId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.globals.set(\"userId\", jsonData.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}"]
+            },
+            "description": "Get the user and save the ID as a global variable"
+          },
+          "response": []
+        },
+        {
+          "name": "3. Create Personalized Quiz",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.globals.set(\"quizId\", jsonData.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "create"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topic\": \"JavaScript Promises\",\n  \"userId\": \"{{userId}}\",\n  \"difficulty\": \"intermediate\",\n  \"numQuestions\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a personalized quiz and save the quiz ID"
+          },
+          "response": []
+        },
+        {
+          "name": "4. Submit Quiz Result",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/quiz-results",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "quiz-results"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"quizId\": \"{{quizId}}\",\n  \"topic\": \"JavaScript Promises\",\n  \"score\": 0.9,\n  \"correctAnswers\": 9,\n  \"totalQuestions\": 10,\n  \"difficultyBreakdown\": {\n    \"basic\": {\n      \"correct\": 5,\n      \"total\": 5\n    },\n    \"intermediate\": {\n      \"correct\": 3,\n      \"total\": 3\n    },\n    \"advanced\": {\n      \"correct\": 1,\n      \"total\": 2\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Submit a high score result to trigger difficulty recommendation"
+          },
+          "response": []
+        },
+        {
+          "name": "5. Get User Statistics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/statistics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "statistics"]
+            },
+            "description": "Check if difficulty was recommended as 'advanced' due to high score"
+          },
+          "response": []
+        },
+        {
+          "name": "6. Get Topic Recommendations",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/recommendations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "recommendations"]
+            },
+            "description": "Get personalized topic recommendations"
+          },
+          "response": []
+        },
+        {
+          "name": "7. Get Personalized Quizzes",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/quizzes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "quizzes"]
+            },
+            "description": "Get quizzes matching user's favorite topics"
+          },
+          "response": []
+        }
+      ],
+      "description": "A guided workflow for testing the personalization features"
+    },
+    {
+      "name": "Quiz Evaluation & Maintenance",
+      "item": [
+        {
+          "name": "Submit Quiz Feedback",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/{{quizId}}/feedback",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "{{quizId}}", "feedback"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"isFromAdmin\": false,\n  \"overallRating\": 4,\n  \"contentAccuracy\": 4,\n  \"questionClarity\": 5,\n  \"comments\": \"Great quiz, but one question could be clearer.\",\n  \"questionFeedback\": [\n    {\n      \"questionId\": \"q1\",\n      \"isCorrect\": true,\n      \"comments\": \"Well-written question.\"\n    },\n    {\n      \"questionId\": \"q2\",\n      \"isCorrect\": false,\n      \"comments\": \"The answer seems incorrect.\",\n      \"suggestedChanges\": \"Consider updating the answer to include async/await syntax.\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Submit feedback for a specific quiz"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Quiz Feedback",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/{{quizId}}/feedback",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "{{quizId}}", "feedback"]
+            },
+            "description": "Get all feedback for a specific quiz"
+          },
+          "response": []
+        },
+        {
+          "name": "Admin Feedback with Issues",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/{{quizId}}/feedback",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "{{quizId}}", "feedback"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"admin-123\",\n  \"isFromAdmin\": true,\n  \"overallRating\": 3,\n  \"contentAccuracy\": 2,\n  \"questionClarity\": 4,\n  \"comments\": \"Content needs updating in a few questions.\",\n  \"questionFeedback\": [\n    {\n      \"questionId\": \"q1\",\n      \"isCorrect\": false,\n      \"comments\": \"This answer is outdated with the latest JavaScript standards.\",\n      \"suggestedChanges\": \"Update to reflect ES2022 standard.\"\n    },\n    {\n      \"questionId\": \"q3\",\n      \"isCorrect\": false,\n      \"comments\": \"The explanation is confusing.\",\n      \"suggestedChanges\": \"Simplify and provide a clearer explanation with an example.\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Submit admin feedback that will trigger update scheduling"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Quiz Question",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/{{quizId}}/questions/q1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "{{quizId}}", "questions", "q1"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"updates\": {\n    \"text\": \"Updated question text with clearer wording.\",\n    \"explanation\": \"New explanation with more details and examples.\",\n    \"choices\": [\n      {\n        \"id\": \"a\",\n        \"text\": \"Updated choice A\",\n        \"isCorrect\": false\n      },\n      {\n        \"id\": \"b\",\n        \"text\": \"Updated choice B\",\n        \"isCorrect\": true\n      },\n      {\n        \"id\": \"c\",\n        \"text\": \"Updated choice C\",\n        \"isCorrect\": false\n      },\n      {\n        \"id\": \"d\",\n        \"text\": \"Updated choice D\",\n        \"isCorrect\": false\n      }\n    ]\n  },\n  \"changedBy\": \"admin-123\",\n  \"reason\": \"Updating based on user feedback and new standards\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Update a specific question in a quiz"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Quiz Revisions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/{{quizId}}/revisions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "{{quizId}}", "revisions"]
+            },
+            "description": "Get revision history for a specific quiz"
+          },
+          "response": []
+        },
+        {
+          "name": "Schedule Quiz Update",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/schedule-update",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "schedule-update"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quizId\": \"{{quizId}}\",\n  \"scheduledDate\": \"2023-12-31T23:59:59.999Z\",\n  \"reason\": \"Content needs updating to reflect new framework version\",\n  \"priority\": \"high\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Schedule an update for a quiz"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Quizzes Needing Update",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/updates?completed=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "updates"],
+              "query": [
+                {
+                  "key": "completed",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Get all quizzes that need updates"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Quizzes Needing Review",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/review?days=180",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "review"],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "180"
+                }
+              ]
+            },
+            "description": "Get quizzes that haven't been reviewed in the specified number of days"
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoints for quiz quality assessment, feedback, and maintenance"
+    },
+    {
+      "name": "Quiz Evaluation Workflow",
+      "item": [
+        {
+          "name": "1. Create a New Quiz",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.globals.set(\"quizId\", jsonData.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "create"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topic\": \"TypeScript Generics\",\n  \"difficulty\": \"intermediate\",\n  \"numQuestions\": 8\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a new quiz that we'll evaluate and update"
+          },
+          "response": []
+        },
+        {
+          "name": "2. Submit User Feedback",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/{{quizId}}/feedback",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "{{quizId}}", "feedback"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"user-123\",\n  \"isFromAdmin\": false,\n  \"overallRating\": 3,\n  \"contentAccuracy\": 3,\n  \"questionClarity\": 2,\n  \"comments\": \"Quiz has good content but some questions are confusing.\",\n  \"questionFeedback\": [\n    {\n      \"questionId\": \"q1\",\n      \"isCorrect\": true,\n      \"comments\": \"Good question with clear answer.\"\n    },\n    {\n      \"questionId\": \"q2\",\n      \"isCorrect\": false,\n      \"comments\": \"The explanation doesn't match the question.\",\n      \"suggestedChanges\": \"Review explanation for clarity.\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Submit initial user feedback on the quiz"
+          },
+          "response": []
+        },
+        {
+          "name": "3. Admin Review",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/{{quizId}}/feedback",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "{{quizId}}", "feedback"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"admin-123\",\n  \"isFromAdmin\": true,\n  \"overallRating\": 3,\n  \"contentAccuracy\": 4,\n  \"questionClarity\": 2,\n  \"comments\": \"Content is accurate but presentation needs improvement. Question 2 needs revision.\",\n  \"questionFeedback\": [\n    {\n      \"questionId\": \"q2\",\n      \"isCorrect\": false,\n      \"comments\": \"This question needs clarification. The wording is ambiguous.\",\n      \"suggestedChanges\": \"Reword question to be more specific about generic constraints.\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Admin reviews the quiz and provides feedback"
+          },
+          "response": []
+        },
+        {
+          "name": "4. Get All Feedback",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/{{quizId}}/feedback",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "{{quizId}}", "feedback"]
+            },
+            "description": "View all feedback for this quiz"
+          },
+          "response": []
+        },
+        {
+          "name": "5. Submit Quiz Result",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/quiz-results",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "quiz-results"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"quizId\": \"{{quizId}}\",\n  \"topic\": \"TypeScript Generics\",\n  \"score\": 0.85,\n  \"correctAnswers\": 7,\n  \"totalQuestions\": 8,\n  \"difficultyBreakdown\": {\n    \"basic\": {\n      \"correct\": 3,\n      \"total\": 3\n    },\n    \"intermediate\": {\n      \"correct\": 3,\n      \"total\": 4\n    },\n    \"advanced\": {\n      \"correct\": 1,\n      \"total\": 1\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Submit the user's results for the quiz"
+          },
+          "response": []
+        },
+        {
+          "name": "6. View User Statistics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/statistics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "statistics"]
+            },
+            "description": "View comprehensive learning statistics for the user"
+          },
+          "response": []
+        },
+        {
+          "name": "7. Get Topic Recommendations",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/recommendations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "recommendations"]
+            },
+            "description": "Get topic recommendations based on user's interests and performance"
+          },
+          "response": []
+        },
+        {
+          "name": "8. Update Quiz Question",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/{{quizId}}/questions/q2",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "{{quizId}}", "questions", "q2"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"updates\": {\n    \"text\": \"What is the correct syntax for constraining a TypeScript generic to a specific type?\",\n    \"explanation\": \"TypeScript allows you to constrain generics using the 'extends' keyword, which ensures the type parameter has all properties of the constraint type.\",\n    \"choices\": [\n      {\n        \"id\": \"a\",\n        \"text\": \"<T implements Interface>\",\n        \"isCorrect\": false\n      },\n      {\n        \"id\": \"b\",\n        \"text\": \"<T extends Interface>\",\n        \"isCorrect\": true\n      },\n      {\n        \"id\": \"c\",\n        \"text\": \"<T = Interface>\",\n        \"isCorrect\": false\n      },\n      {\n        \"id\": \"d\",\n        \"text\": \"<T is Interface>\",\n        \"isCorrect\": false\n      }\n    ]\n  },\n  \"changedBy\": \"admin-123\",\n  \"reason\": \"Clarified question wording and improved explanation based on user feedback\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Update the problematic question"
+          },
+          "response": []
+        },
+        {
+          "name": "9. Get Updated User Statistics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/statistics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "statistics"]
+            },
+            "description": "Check if the user statistics have been updated with the completed quiz"
+          },
+          "response": []
+        },
+        {
+          "name": "10. Schedule Periodic Review",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/quizzes/schedule-update",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quizzes", "schedule-update"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quizId\": \"{{quizId}}\",\n  \"scheduledDate\": \"{{$isoTimestamp}}\",\n  \"reason\": \"Periodic review of TypeScript content to check for new language features\",\n  \"priority\": \"low\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Schedule a future review for TypeScript-related content"
+          },
+          "response": []
+        }
+      ],
+      "description": "A complete workflow demonstrating the quiz evaluation, feedback, statistics, and update process"
     }
   ],
   "variable": [
@@ -204,6 +912,10 @@
     {
       "key": "quizId",
       "value": "your-quiz-id-here"
+    },
+    {
+      "key": "userId",
+      "value": "your-user-id-here"
     },
     {
       "key": "topic",

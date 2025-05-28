@@ -1,6 +1,7 @@
 import { MongoClient, Collection, MongoClientOptions, MongoError } from 'mongodb';
-import { Quiz, QuizSession, PromptHistory } from '../models/quiz.model';
+import { Quiz, QuizSession, PromptHistory, PromptFeedback, ResearchData, QuizEvaluation } from '../models/quiz.model';
 import { EvaluationResult } from '../models/evaluation.model';
+import { User, QuizResult, UserStatistics, TopicRecommendation } from '../models/user.model';
 import { v4 as uuidv4 } from 'uuid';
 
 export class MemoryService {
@@ -8,6 +9,8 @@ export class MemoryService {
   private quizCollection!: Collection<QuizSession>;
   private promptCollection!: Collection<PromptHistory>;
   private quizzesCollection!: Collection<Quiz>;
+  private usersCollection!: Collection<User>;
+  private quizResultsCollection!: Collection<QuizResult>;
   private isConnected: boolean = false;
   private isInitialized: boolean = false;
   private readonly MAX_RETRIES = 3;
@@ -37,6 +40,8 @@ export class MemoryService {
       this.quizCollection = db.collection('sessions');
       this.promptCollection = db.collection('prompts');
       this.quizzesCollection = db.collection('quizzes');
+      this.usersCollection = db.collection('users');
+      this.quizResultsCollection = db.collection('quizResults');
       
       await this.initializeCollections();
       this.isInitialized = true;
@@ -102,6 +107,16 @@ export class MemoryService {
 
       await this.quizzesCollection.createIndex({ topic: 1 });
 
+      // Create indexes for user collections
+      await this.usersCollection.createIndex({ id: 1 }, { unique: true });
+      await this.usersCollection.createIndex({ email: 1 }, { unique: true });
+      await this.usersCollection.createIndex({ "preferences.favoriteTopics": 1 });
+      
+      await this.quizResultsCollection.createIndex({ userId: 1 });
+      await this.quizResultsCollection.createIndex({ quizId: 1 });
+      await this.quizResultsCollection.createIndex({ topic: 1 });
+      await this.quizResultsCollection.createIndex({ completedAt: 1 });
+
       // console.log('Collections and indexes initialized successfully');
     } catch (error) {
       console.error('Error initializing collections:', error);
@@ -124,6 +139,8 @@ export class MemoryService {
         this.quizCollection = this.client.db().collection<QuizSession>('sessions');
         this.promptCollection = this.client.db().collection<PromptHistory>('prompts');
         this.quizzesCollection = this.client.db().collection<Quiz>('quizzes');
+        this.usersCollection = this.client.db().collection<User>('users');
+        this.quizResultsCollection = this.client.db().collection<QuizResult>('quizResults');
         this.isConnected = true;
         // console.log('Reconnected to MongoDB successfully');
         return;
@@ -664,5 +681,278 @@ export class MemoryService {
         }
       )
     );
+  }
+
+  // User management methods
+  async createUser(username: string, email: string, favoriteTopics: string[] = []): Promise<User> {
+    const user: User = {
+      id: uuidv4(),
+      username,
+      email,
+      preferences: {
+        favoriteTopics
+      },
+      createdAt: new Date()
+    };
+    
+    await this.withRetry(() => this.usersCollection.insertOne(user));
+    return user;
+  }
+  
+  async getUserById(id: string): Promise<User | null> {
+    return await this.withRetry(() => this.usersCollection.findOne({ id }));
+  }
+  
+  async getUserByEmail(email: string): Promise<User | null> {
+    return await this.withRetry(() => this.usersCollection.findOne({ email }));
+  }
+  
+  async updateUserPreferences(userId: string, preferences: Partial<User['preferences']>): Promise<void> {
+    const user = await this.getUserById(userId);
+    if (!user) return;
+    
+    const updatedPreferences = {
+      favoriteTopics: [...(user.preferences.favoriteTopics || [])],
+      ...preferences
+    };
+    
+    await this.withRetry(() => 
+      this.usersCollection.updateOne(
+        { id: userId },
+        { 
+          $set: {
+            "preferences": updatedPreferences,
+            "updatedAt": new Date()
+          }
+        }
+      )
+    );
+  }
+  
+  async addFavoriteTopics(userId: string, topics: string[]): Promise<void> {
+    await this.withRetry(() => 
+      this.usersCollection.updateOne(
+        { id: userId },
+        { 
+          $addToSet: { "preferences.favoriteTopics": { $each: topics } },
+          $set: { "updatedAt": new Date() }
+        }
+      )
+    );
+  }
+  
+  async removeFavoriteTopics(userId: string, topics: string[]): Promise<void> {
+    await this.withRetry(() => 
+      this.usersCollection.updateOne(
+        { id: userId },
+        { 
+          $pull: { "preferences.favoriteTopics": { $in: topics } },
+          $set: { "updatedAt": new Date() }
+        }
+      )
+    );
+  }
+  
+  async getQuizzesByUserPreferences(userId: string): Promise<QuizSession[]> {
+    const user = await this.getUserById(userId);
+    if (!user || !user.preferences.favoriteTopics.length) {
+      return [];
+    }
+    
+    return await this.withRetry(() => 
+      this.quizCollection.find({
+        $or: [
+          { topic: { $in: user.preferences.favoriteTopics } },
+          { "similarTopics": { $in: user.preferences.favoriteTopics } }
+        ]
+      }).toArray()
+    );
+  }
+  
+  // Quiz results management
+  async saveQuizResult(result: QuizResult): Promise<void> {
+    await this.withRetry(() => this.quizResultsCollection.insertOne(result));
+  }
+  
+  async getUserQuizResults(userId: string): Promise<QuizResult[]> {
+    return await this.withRetry(() => 
+      this.quizResultsCollection.find({ userId }).sort({ completedAt: -1 }).toArray()
+    );
+  }
+  
+  async getUserTopicResults(userId: string, topic: string): Promise<QuizResult[]> {
+    return await this.withRetry(() => 
+      this.quizResultsCollection.find({ userId, topic }).sort({ completedAt: -1 }).toArray()
+    );
+  }
+  
+  async getUserStatistics(userId: string): Promise<UserStatistics | null> {
+    const results = await this.getUserQuizResults(userId);
+    if (!results || results.length === 0) {
+      return null;
+    }
+    
+    // Calculate overall statistics
+    const totalQuizzes = results.length;
+    const totalScore = results.reduce((sum, result) => sum + result.score, 0);
+    const averageScore = totalScore / totalQuizzes;
+    
+    // Calculate topic performance
+    const topicPerformance: UserStatistics['topicPerformance'] = {};
+    
+    // Group by topic
+    results.forEach(result => {
+      if (!topicPerformance[result.topic]) {
+        topicPerformance[result.topic] = {
+          completed: 0,
+          averageScore: 0,
+          strengths: [],
+          weaknesses: []
+        };
+      }
+      
+      topicPerformance[result.topic].completed += 1;
+      const topicScores = topicPerformance[result.topic];
+      const currentTotal = topicScores.averageScore * (topicPerformance[result.topic].completed - 1);
+      topicPerformance[result.topic].averageScore = 
+        (currentTotal + result.score) / topicPerformance[result.topic].completed;
+    });
+    
+    // Determine strengths and weaknesses for each topic
+    Object.keys(topicPerformance).forEach(topic => {
+      const performance = topicPerformance[topic];
+      
+      // Topics with scores > 80% are strengths
+      if (performance.averageScore >= 0.8) {
+        performance.strengths.push('High proficiency');
+      }
+      
+      // Topics with scores < 60% are weaknesses
+      if (performance.averageScore < 0.6) {
+        performance.weaknesses.push('Needs improvement');
+      }
+    });
+    
+    // Recommend difficulty based on recent performance
+    const recentResults = results.slice(0, 5);
+    const recentAverage = recentResults.reduce((sum, result) => sum + result.score, 0) / recentResults.length;
+    
+    let recommendedDifficulty: UserStatistics['recommendedDifficulty'] = 'intermediate';
+    if (recentAverage >= 0.8) {
+      recommendedDifficulty = 'advanced';
+    } else if (recentAverage < 0.6) {
+      recommendedDifficulty = 'basic';
+    }
+    
+    // Calculate quizzes over time
+    const dateMap = new Map<string, number>();
+    results.forEach(result => {
+      const dateStr = result.completedAt.toISOString().split('T')[0]; // YYYY-MM-DD
+      const current = dateMap.get(dateStr) || 0;
+      dateMap.set(dateStr, current + 1);
+    });
+    
+    const quizzesCompletedOverTime = Array.from(dateMap.entries()).map(([date, count]) => ({
+      date,
+      count
+    })).sort((a, b) => a.date.localeCompare(b.date));
+    
+    return {
+      totalQuizzesCompleted: totalQuizzes,
+      averageScore,
+      topicPerformance,
+      recommendedDifficulty,
+      quizzesCompletedOverTime,
+      lastActive: results[0].completedAt
+    };
+  }
+  
+  async getSimilarTopics(topic: string, limit: number = 5): Promise<string[]> {
+    // Get sessions with this topic
+    const sessions = await this.getSessionsByTopic(topic);
+    if (!sessions || sessions.length === 0) {
+      return [];
+    }
+    
+    // Collect all similar topics
+    const similarTopicsMap = new Map<string, number>();
+    
+    sessions.forEach(session => {
+      if (session.similarTopics && session.similarTopics.length > 0) {
+        session.similarTopics.forEach((similarTopic: string) => {
+          if (similarTopic !== topic) {
+            const current = similarTopicsMap.get(similarTopic) || 0;
+            similarTopicsMap.set(similarTopic, current + 1);
+          }
+        });
+      }
+    });
+    
+    // Sort by frequency and return the top ones
+    return Array.from(similarTopicsMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(entry => entry[0]);
+  }
+  
+  async getTopicRecommendations(userId: string, limit: number = 5): Promise<TopicRecommendation[]> {
+    const user = await this.getUserById(userId);
+    if (!user) return [];
+    
+    const userTopics = user.preferences.favoriteTopics;
+    if (!userTopics || userTopics.length === 0) {
+      // If user has no favorite topics, return popular topics
+      return await this.getPopularTopics(limit);
+    }
+    
+    // Get similar topics for each user topic
+    const recommendations = new Map<string, TopicRecommendation>();
+    
+    for (const topic of userTopics) {
+      const similarTopics = await this.getSimilarTopics(topic, 3);
+      
+      for (const similarTopic of similarTopics) {
+        if (!userTopics.includes(similarTopic)) {
+          const existing = recommendations.get(similarTopic);
+          
+          if (existing) {
+            existing.relevanceScore += 1;
+            if (!existing.basedOn.includes(topic)) {
+              existing.basedOn.push(topic);
+            }
+          } else {
+            recommendations.set(similarTopic, {
+              topic: similarTopic,
+              relevanceScore: 1,
+              basedOn: [topic],
+              difficulty: 'intermediate' // Default difficulty
+            });
+          }
+        }
+      }
+    }
+    
+    // Sort by relevance score and return the top recommendations
+    return Array.from(recommendations.values())
+      .sort((a, b) => b.relevanceScore - a.relevanceScore)
+      .slice(0, limit);
+  }
+  
+  async getPopularTopics(limit: number = 5): Promise<TopicRecommendation[]> {
+    // Aggregation to find most common topics from sessions
+    const topicCounts = await this.withRetry(() => 
+      this.quizCollection.aggregate([
+        { $group: { _id: "$topic", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: limit }
+      ]).toArray()
+    );
+    
+    return topicCounts.map(item => ({
+      topic: item._id,
+      relevanceScore: item.count,
+      basedOn: ["popular"],
+      difficulty: 'intermediate'
+    }));
   }
 } 

@@ -283,6 +283,127 @@ Request body:
 }
 ```
 
+#### User Management & Personalization
+
+1. **Create User**
+```http
+POST /users
+```
+Create a new user with personalized preferences.
+
+Request body:
+```json
+{
+  "username": "john_doe",
+  "email": "john@example.com",
+  "favoriteTopics": ["JavaScript", "Python", "Data Science"]
+}
+```
+
+2. **Get User by ID**
+```http
+GET /users/:id
+```
+Returns details of a specific user.
+
+3. **Update User Favorite Topics**
+```http
+PUT /users/:id/topics
+```
+Update a user's favorite topics.
+
+Request body:
+```json
+{
+  "topics": ["JavaScript", "Machine Learning", "React"],
+  "action": "add" // or "remove" or omit for complete replacement
+}
+```
+
+4. **Get Personalized Quizzes**
+```http
+GET /users/:id/quizzes
+```
+Returns quizzes that match the user's favorite topics.
+
+5. **Save Quiz Result**
+```http
+POST /users/quiz-results
+```
+Save a user's quiz result for personalization.
+
+Request body:
+```json
+{
+  "userId": "user-123",
+  "quizId": "quiz-456",
+  "topic": "JavaScript Promises",
+  "score": 0.85,
+  "correctAnswers": 8,
+  "totalQuestions": 10,
+  "difficultyBreakdown": {
+    "basic": {
+      "correct": 4,
+      "total": 5
+    },
+    "intermediate": {
+      "correct": 3,
+      "total": 3
+    },
+    "advanced": {
+      "correct": 1,
+      "total": 2
+    }
+  }
+}
+```
+
+6. **Get User Statistics**
+```http
+GET /users/:id/statistics
+```
+Returns comprehensive learning statistics for a user.
+
+Response example:
+```json
+{
+  "totalQuizzesCompleted": 15,
+  "averageScore": 0.82,
+  "topicPerformance": {
+    "JavaScript": {
+      "completed": 8,
+      "averageScore": 0.85,
+      "strengths": ["High proficiency"],
+      "weaknesses": []
+    },
+    "Python": {
+      "completed": 4,
+      "averageScore": 0.55,
+      "strengths": [],
+      "weaknesses": ["Needs improvement"]
+    }
+  },
+  "recommendedDifficulty": "advanced",
+  "quizzesCompletedOverTime": [
+    {
+      "date": "2023-09-01",
+      "count": 2
+    },
+    {
+      "date": "2023-09-02",
+      "count": 3
+    }
+  ],
+  "lastActive": "2023-09-02T15:30:45.123Z"
+}
+```
+
+7. **Get Topic Recommendations**
+```http
+GET /users/:id/recommendations
+```
+Returns topic recommendations based on user's favorites and activity.
+
 ### Using the API
 
 ```javascript
@@ -306,68 +427,56 @@ async function getAllQuizzes() {
   return await response.json();
 }
 
-// Get quiz by ID
-async function getQuizById(id) {
-  const response = await fetch(`${API_BASE_URL}/quizzes/${id}`);
+// Get personalized quizzes for a user
+async function getPersonalizedQuizzes(userId) {
+  const response = await fetch(`${API_BASE_URL}/users/${userId}/quizzes`);
   return await response.json();
 }
 
-// Get quizzes by topic
-async function getQuizzesByTopic(topic) {
-  const response = await fetch(`${API_BASE_URL}/quizzes/topic/${encodeURIComponent(topic)}`);
-  return await response.json();
-}
-
-// Get quizzes by subtopic
-async function getQuizzesBySubtopic(subtopic) {
-  const response = await fetch(`${API_BASE_URL}/quizzes/subtopic/${encodeURIComponent(subtopic)}`);
-  return await response.json();
-}
-
-// Evaluate a quiz
-async function evaluateQuiz(quizId, topic) {
-  const response = await fetch(`${API_BASE_URL}/quizzes/evaluate`, {
+// Save quiz result
+async function saveQuizResult(result) {
+  const response = await fetch(`${API_BASE_URL}/users/quiz-results`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ quizId, topic })
+    body: JSON.stringify(result)
   });
+  return await response.json();
+}
+
+// Get user statistics
+async function getUserStatistics(userId) {
+  const response = await fetch(`${API_BASE_URL}/users/${userId}/statistics`);
   return await response.json();
 }
 
 // Example usage
 async function example() {
   try {
-    // Create a new quiz
-    const newQuiz = await createQuiz('JavaScript Promises', {
-      multipleChoiceCount: 8,
-      codingQuestionCount: 2,
-      difficultyDistribution: {
-        basic: 4,
-        intermediate: 4,
-        advanced: 2
-      },
-      typeDistribution: {
-        multipleChoice: 8,
-        coding: 2
-      },
-      includeHints: true,
-      maxAttempts: 3
+    // Get personalized quizzes
+    const personalizedQuizzes = await getPersonalizedQuizzes('user-123');
+    console.log('Personalized quizzes:', personalizedQuizzes);
+
+    // Save quiz result
+    const result = await saveQuizResult({
+      userId: 'user-123',
+      quizId: 'quiz-456',
+      topic: 'JavaScript Promises',
+      score: 0.85,
+      correctAnswers: 8,
+      totalQuestions: 10,
+      difficultyBreakdown: {
+        basic: { correct: 4, total: 5 },
+        intermediate: { correct: 3, total: 3 },
+        advanced: { correct: 1, total: 2 }
+      }
     });
-    console.log('Created quiz:', newQuiz);
-
-    // Get all quizzes
-    const allQuizzes = await getAllQuizzes();
-    console.log('All quizzes:', allQuizzes);
-
-    // Get quizzes by topic
-    const topicQuizzes = await getQuizzesByTopic('JavaScript');
-    console.log('JavaScript quizzes:', topicQuizzes);
-
-    // Evaluate a quiz
-    const evaluation = await evaluateQuiz(newQuiz.id, 'JavaScript Promises');
-    console.log('Quiz evaluation:', evaluation);
+    console.log('Saved quiz result:', result);
+    
+    // Get user statistics
+    const statistics = await getUserStatistics('user-123');
+    console.log('User statistics:', statistics);
   } catch (error) {
     console.error('Error:', error);
   }
@@ -396,6 +505,26 @@ async function example() {
    - Check for topic coverage
    - Validate difficulty levels
    - Test coding questions with multiple cases
+
+## Personalization Features
+
+### 1. Topic-Based Personalization
+- **Favorite Topics Selection**: During registration/setup, users select topics they're interested in (AI, Programming, Math, etc.).
+- **User Profile Storage**: These topics are saved in MongoDB per user.
+- **Personalized Quiz Display**: When a user logs in, only quizzes related to their chosen topics are displayed.
+- **Related Topic Suggestions**: After creating a quiz, the system suggests similar topics based on the quiz content.
+
+### 2. Difficulty-Based Personalization
+- **Quiz Result Tracking**: Records correct/incorrect answers and their difficulty levels (basic/intermediate/advanced) after each quiz completion.
+- **Performance Analysis**: If a user scores >80%, suggests harder quizzes next time; if lower, suggests easier ones.
+- **Non-Restrictive**: Users can still choose any difficulty when creating quizzes; personalization only applies to quiz recommendations.
+
+### 3. Learning Statistics
+- **Personal Stats Dashboard**: Shows:
+  - Total quizzes completed
+  - Average correct answer percentage
+  - Strengths/weaknesses by topic
+- **Learning Insights**: Helps users understand where they need improvement, increasing engagement and retention.
 
 ## Error Handling
 
@@ -429,6 +558,10 @@ try {
 - Implements prompt versioning for tracking improvements
 - Uses machine learning to identify successful prompt patterns
 - Maintains separate prompt histories for different difficulty levels
+- Implemented personalization features for users
+- Added user statistics and performance tracking
+- Created topic recommendation system based on user preferences
+- Developed adaptive difficulty recommendations based on user performance
 
 ## Recent Improvements
 
@@ -440,6 +573,10 @@ try {
 - Optimized quiz storage with updatedAt timestamps and evaluation metrics
 - Improved content extraction for better analysis results
 - Added support for finding quizzes by topics and subtopics
+- Implemented personalization features for users
+- Added user statistics and performance tracking
+- Created topic recommendation system based on user preferences
+- Developed adaptive difficulty recommendations based on user performance
 
 ## Environment Setup
 
@@ -480,6 +617,67 @@ For security, always use environment variables for sensitive data and API keys.
 
 Please read our contributing guidelines before submitting pull requests.
 
-## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+
+## Quiz Evaluation and Learning Statistics
+
+The system now includes comprehensive quiz evaluation, feedback, and learning statistics features to ensure quiz quality and help users track their progress.
+
+### Learning Statistics
+
+The learning statistics dashboard provides users with a comprehensive view of their learning progress:
+
+- **Overview Statistics:**
+  - Total quizzes completed
+  - Average score across all quizzes
+  - Recent activity timeline
+
+- **Topic-based Analysis:**
+  - Performance broken down by topic
+  - Strengths and weaknesses identification
+  - Recommended topics for further study
+
+- **Personalized Recommendations:**
+  - Difficulty recommendations based on performance (users scoring >80% are recommended advanced quizzes)
+  - Topic recommendations based on interests and performance gaps
+
+### Quiz Evaluation and Feedback
+
+The system now allows both users and administrators to evaluate quizzes and provide detailed feedback:
+
+- **Quiz Feedback:**
+  - Overall rating (1-5 scale)
+  - Content accuracy assessment
+  - Question clarity rating
+  - Specific feedback for individual questions
+  - Suggestions for improvements
+
+- **Admin Review:**
+  - Ability to mark questions as incorrect or outdated
+  - Detailed feedback with suggested changes
+  - Automatic scheduling of updates for quizzes with identified issues
+
+- **Quiz Maintenance:**
+  - Question-level updates with revision tracking
+  - Change history with before/after comparisons
+  - Scheduled maintenance for knowledge domains that change frequently
+  - Periodic review reminders (configurable timeframe)
+
+### API Endpoints
+
+#### Learning Statistics
+- `GET /api/users/:id/statistics` - Get comprehensive learning statistics for a user
+- `GET /api/users/:id/recommendations` - Get topic recommendations based on performance and interests
+
+#### Quiz Evaluation
+- `POST /api/quizzes/:quizId/feedback` - Submit feedback for a quiz
+- `GET /api/quizzes/:quizId/feedback` - Get all feedback for a specific quiz
+- `PUT /api/quizzes/:quizId/questions/:questionId` - Update a question based on feedback
+- `GET /api/quizzes/:quizId/revisions` - Get revision history for a quiz
+
+#### Quiz Maintenance
+- `POST /api/quizzes/schedule-update` - Schedule a quiz for update
+- `GET /api/quizzes/updates` - Get quizzes pending updates
+- `GET /api/quizzes/review` - Get quizzes that need periodic review
+
+Refer to the Postman collection for detailed examples of using these endpoints. 
