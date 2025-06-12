@@ -54,9 +54,9 @@ export class MemoryService {
   }
 
   private async initializeCollections(): Promise<void> {
+    if (this.isInitialized) return;
     try {
       const db = this.client.db();
-      
       const collections = await db.listCollections().toArray();
       const collectionNames = collections.map(c => c.name);
 
@@ -75,9 +75,7 @@ export class MemoryService {
         // console.log('Created quizzes collection');
       }
 
-      await this.promptCollection.dropIndexes();
-      await this.quizCollection.dropIndexes();
-      await this.quizzesCollection.dropIndexes();
+      // Bỏ hoàn toàn các lệnh dropIndexes để tránh lỗi xung đột index
 
       await this.promptCollection.createIndex(
         { topic: 1 },
@@ -118,6 +116,7 @@ export class MemoryService {
       await this.quizResultsCollection.createIndex({ completedAt: 1 });
 
       // console.log('Collections and indexes initialized successfully');
+      this.isInitialized = true;
     } catch (error) {
       console.error('Error initializing collections:', error);
       throw error;

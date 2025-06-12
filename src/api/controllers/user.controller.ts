@@ -156,15 +156,13 @@ export class UserController {
       }
       
       const result: QuizResult = {
-        id: uuidv4(),
         userId,
         quizId,
         topic,
         score,
-        correctAnswers,
-        totalQuestions,
-        difficultyBreakdown,
-        completedAt: new Date()
+        difficulty: 'beginner',
+        completedAt: new Date(),
+        answers: []
       };
       
       await this.memory.saveQuizResult(result);

@@ -4,77 +4,59 @@
 export function parseJSON<T>(jsonString: string): T | null {
   if (!jsonString) return null;
 
+  console.log('=== RAW RESPONSE ===', jsonString);
   console.log('=== JSON PARSING DEBUG ===');
   console.log('Input string:', jsonString);
   console.log('String length:', jsonString.length);
   
-  try {
-    // First: Try to extract JSON from code blocks if present
-    const codeBlockMatch = jsonString.match(/```(?:json)?\s*([\s\S]*?)```/);
-    let cleanedJson = codeBlockMatch ? codeBlockMatch[1].trim() : jsonString.trim();
-    
-    // If response is from Hugging Face, extract the generated_text
-    if (cleanedJson.includes('"generated_text"')) {
-      try {
-        const parsed = JSON.parse(cleanedJson);
-        if (Array.isArray(parsed) && parsed[0]?.generated_text) {
-          cleanedJson = parsed[0].generated_text.trim();
-        } else if (parsed.generated_text) {
-          cleanedJson = parsed.generated_text.trim();
-        }
-        // Try to extract from code blocks again
-        const innerCodeBlock = cleanedJson.match(/```(?:json)?\s*([\s\S]*?)```/);
-        if (innerCodeBlock) {
-          cleanedJson = innerCodeBlock[1].trim();
-        }
-        
-        // Try to find JSON object in the cleaned text
-        const jsonMatch = cleanedJson.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          cleanedJson = jsonMatch[0];
-        }
-      } catch (e) {
-        console.error('Error parsing Hugging Face response:', e);
+  // Clean prefix like 'Questions:', 'Answer:', etc.
+  let cleanedJson = jsonString.trim();
+  cleanedJson = cleanedJson.replace(/^(Questions|Question|Answers|Answer|Response|Output|Result|Results|Prompt|JSON)\s*:?\s*/i, '');
+
+  // Try to extract JSON object or array from anywhere in the string
+  const objectMatch = cleanedJson.match(/\{[\s\S]*\}/);
+  const arrayMatch = cleanedJson.match(/\[[\s\S]*\]/);
+  if (objectMatch) {
+    cleanedJson = objectMatch[0];
+  } else if (arrayMatch) {
+    cleanedJson = arrayMatch[0];
       }
-    }
 
+  try {
     console.log('Cleaned JSON to parse:', cleanedJson);
-
-    // First attempt: direct parse
     const parsed = JSON.parse(cleanedJson) as T;
     console.log('Successfully parsed JSON structure:', 
       typeof parsed === 'object' ? Object.keys(parsed as object) : typeof parsed);
     return parsed;
   } catch (error) {
     console.error('Initial parse error:', error);
-    
     try {
       // Second attempt: Try to fix common JSON issues
       let fixedJson = jsonString
         .replace(/```(?:json)?\s*/g, '')  // Remove all code block markers
         .replace(/```\s*/g, '')
         .trim()
-        .replace(/,(\s*[}\]])/g, '$1')  // Remove trailing commas
+        .replace(/,([\s*[}\]])/g, '$1')  // Remove trailing commas
         .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')  // Quote unquoted keys
-        .replace(/\n/g, ' ');  // Remove newlines
-      
-      // Try to extract complete JSON object
+        .replace(/\n/g, ' ');
+      // Try to extract complete JSON object or array
       const completeObject = fixedJson.match(/\{[\s\S]*\}/);
+      const completeArray = fixedJson.match(/\[[\s\S]*\]/);
       if (completeObject) {
         fixedJson = completeObject[0];
+      } else if (completeArray) {
+        fixedJson = completeArray[0];
       }
-      
       console.log('After fixing common issues:', fixedJson);
-      
       const parsed = JSON.parse(fixedJson) as T;
       console.log('Parsed after fixes:', 
         typeof parsed === 'object' ? Object.keys(parsed as object) : typeof parsed);
       return parsed;
     } catch (secondError) {
       console.error('Second parse attempt failed:', secondError);
-      
-      // If all else fails, try to create a valid object from the content
-      return createFallbackObject(jsonString) as T;
+      const fallback = createFallbackObject(jsonString);
+      console.log('Fallback object:', fallback);
+      return fallback as T;
     }
   }
 }

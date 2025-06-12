@@ -93,76 +93,43 @@ export class QuizGenerationFlow {
         topics: [topic],
       };
 
-      // Step 1: Comprehensive Research
-      const analysis = await this.comprehensiveResearch.analyze(topic);
-      
-      // Step 2: Generate main topic questions
-      const mainTopicCount = Math.ceil((options.numberOfQuestions || 5) * 0.4);
-      const subtopicCount = Math.floor((options.numberOfQuestions || 5) * 0.6);
+      // Thực hiện bước search web cho topic trước khi tạo quiz
+      const searchAnalysisAgent = this.comprehensiveResearch.getSearchAnalysisAgent();
+      const searchAnalysis = await searchAnalysisAgent.searchAndAnalyze(topic, {
+        searchResultLimit: 5,
+        maxTokens: 1000,
+        temperature: 0.3
+      });
 
-      const mainTopicAnalysis = {
-        mainSummary: analysis.contextAnalysis.keyConcepts[0].description,
-        importantPoints: analysis.contextAnalysis.keyConcepts.map(c => c.description),
-        topicRelevanceScore: 1,
-        sourceQuality: {
-          credibility: 1,
-          recency: 1,
-          diversity: 1
-        },
-        recommendations: analysis.contextAnalysis.suggestedTopics || []
-      };
-
+      // Truyền kết quả searchAnalysis vào analysisResults khi tạo quiz
       const mainQuiz = await this.quizGenerator.generate(topic, {
-        multipleChoiceCount: Math.ceil(mainTopicCount * config.typeDistribution.multipleChoice),
-        codingQuestionCount: Math.ceil(mainTopicCount * config.typeDistribution.coding),
-        questionCount: mainTopicCount,
+        multipleChoiceCount: config.multipleChoiceCount,
+        codingQuestionCount: config.codingQuestionCount,
+        questionCount: config.multipleChoiceCount + config.codingQuestionCount,
         difficulty: options.difficulty,
-        difficultyDistribution: this.getDifficultyDistribution(options.difficulty),
+        difficultyDistribution: config.difficultyDistribution,
         typeDistribution: config.typeDistribution,
         includeHints: config.includeHints,
         maxAttempts: config.maxAttempts,
-        analysisResults: mainTopicAnalysis
+        analysisResults: searchAnalysis ? {
+          mainSummary: searchAnalysis.mainSummary || '',
+          importantPoints: Array.isArray(searchAnalysis.importantPoints) ? searchAnalysis.importantPoints : [],
+          topicRelevanceScore: typeof searchAnalysis.topicRelevanceScore === 'number' ? searchAnalysis.topicRelevanceScore : 0,
+          sourceQuality: searchAnalysis.sourceQuality || { credibility: 0, recency: 0, diversity: 0 },
+          recommendations: Array.isArray(searchAnalysis.recommendations) ? searchAnalysis.recommendations : []
+        } : {
+          mainSummary: '',
+          importantPoints: [],
+          topicRelevanceScore: 0,
+          sourceQuality: { credibility: 0, recency: 0, diversity: 0 },
+          recommendations: []
+        }
       });
 
-      // Generate subtopic questions
-      const subtopicQuestions: (MultipleChoiceQuestion | CodingQuestion)[] = [];
-      const questionsPerSubtopic = Math.max(1, Math.floor(subtopicCount / analysis.subtopicAnalyses.length));
-      
-      for (const subtopic of analysis.subtopicAnalyses) {
-        const subtopicQuiz = await this.quizGenerator.generate(
-          `${topic} ${subtopic.name}`,
-          {
-            multipleChoiceCount: Math.ceil(questionsPerSubtopic * config.typeDistribution.multipleChoice),
-            codingQuestionCount: Math.ceil(questionsPerSubtopic * config.typeDistribution.coding),
-            questionCount: questionsPerSubtopic,
-            difficulty: options.difficulty,
-            difficultyDistribution: this.getDifficultyDistribution(options.difficulty),
-            typeDistribution: config.typeDistribution,
-            includeHints: config.includeHints,
-            maxAttempts: config.maxAttempts,
-            analysisResults: {
-              mainSummary: subtopic.searchAnalysis.mainSummary || '',
-              importantPoints: subtopic.searchAnalysis.importantPoints || [],
-              topicRelevanceScore: subtopic.searchAnalysis.topicRelevanceScore || 1,
-              sourceQuality: subtopic.searchAnalysis.sourceQuality || {
-                credibility: 1,
-                recency: 1,
-                diversity: 1
-              },
-              recommendations: subtopic.searchAnalysis.recommendations || []
-            }
-          }
-        );
-        subtopicQuestions.push(...this.convertQuestions(subtopicQuiz.questions));
-      }
-
-      // Combine all questions
-      const allQuestions = [...this.convertQuestions(mainQuiz.questions), ...subtopicQuestions];
-      
       // Create final quiz
       const finalQuiz = {
         id: uuidv4(),
-        questions: allQuestions,
+        questions: this.convertQuestions(mainQuiz.questions),
         createdAt: new Date(),
         config: {
           multipleChoiceCount: config.multipleChoiceCount,
@@ -180,36 +147,34 @@ export class QuizGenerationFlow {
         }
       } as Quiz;
 
-      // Evaluate the quiz
-      console.log('\n🔍 Starting Quiz Evaluation...');
-      const quizEvaluation = await this.evaluateQuiz(finalQuiz, topic);
-      console.log('\n📊 Quiz Evaluation Results:');
-      console.log(`Overall Score: ${quizEvaluation.score.toFixed(2)}`);
-      console.log('Feedback Categories:');
-      console.log(`- Coverage: ${quizEvaluation.feedback.coverage.toFixed(2)}`);
-      console.log(`- Difficulty Balance: ${quizEvaluation.feedback.difficulty.toFixed(2)}`);
-      console.log(`- Clarity: ${quizEvaluation.feedback.clarity.toFixed(2)}`);
-      console.log(`- Quality: ${quizEvaluation.feedback.quality.toFixed(2)}`);
-
-      if (quizEvaluation.issues.length > 0) {
-        console.log('\n⚠️ Issues Found:');
-        quizEvaluation.issues.forEach(issue => {
-          console.log(`- [${issue.severity.toUpperCase()}] ${issue.description}`);
-        });
-      }
-
-      if (quizEvaluation.suggestions.length > 0) {
-        console.log('\n💡 Suggestions for Improvement:');
-        quizEvaluation.suggestions.forEach(suggestion => {
-          console.log(`- ${suggestion}`);
-        });
-      }
+      // Evaluate the quiz (BỎ QUA để tăng tốc độ tạo quiz)
+      // console.log('\n🔍 Starting Quiz Evaluation...');
+      // const quizEvaluation = await this.evaluateQuiz(finalQuiz, topic);
+      // console.log('\n📊 Quiz Evaluation Results:');
+      // console.log(`Overall Score: ${quizEvaluation.score.toFixed(2)}`);
+      // console.log('Feedback Categories:');
+      // console.log(`- Coverage: ${quizEvaluation.feedback.coverage.toFixed(2)}`);
+      // console.log(`- Difficulty Balance: ${quizEvaluation.feedback.difficulty.toFixed(2)}`);
+      // console.log(`- Clarity: ${quizEvaluation.feedback.clarity.toFixed(2)}`);
+      // console.log(`- Quality: ${quizEvaluation.feedback.quality.toFixed(2)}`);
+      // if (quizEvaluation.issues.length > 0) {
+      //   console.log('\n⚠️ Issues Found:');
+      //   quizEvaluation.issues.forEach(issue => {
+      //     console.log(`- [${issue.severity.toUpperCase()}] ${issue.description}`);
+      //   });
+      // }
+      // if (quizEvaluation.suggestions.length > 0) {
+      //   console.log('\n💡 Suggestions for Improvement:');
+      //   quizEvaluation.suggestions.forEach(suggestion => {
+      //     console.log(`- ${suggestion}`);
+      //   });
+      // }
 
       // Save the quiz
       await this.memory.saveQuiz(finalQuiz);
 
-      // Save the session with evaluation
-      await this.saveQuizSession(finalQuiz, topic, analysis.contextAnalysis, quizEvaluation);
+      // Save the session (không cần evaluation)
+      await this.saveQuizSession(finalQuiz, topic, {}, undefined);
 
       return finalQuiz;
     } catch (error) {
@@ -227,7 +192,7 @@ export class QuizGenerationFlow {
     return maxDifficulty as 'basic' | 'intermediate' | 'advanced';
   }
 
-  private async saveQuizSession(quiz: Quiz, topic: string, context: any, evaluation: QuizEvaluation): Promise<void> {
+  private async saveQuizSession(quiz: Quiz, topic: string, context: any, evaluation?: QuizEvaluation): Promise<void> {
     try {
       // Create basic session first
       const session = await this.memory.createSession(topic, quiz);

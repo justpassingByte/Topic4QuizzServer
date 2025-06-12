@@ -11,10 +11,9 @@ export class UserService extends DatabaseService {
 
   constructor() {
     super();
-    this.initialize();
   }
 
-  private async initialize(): Promise<void> {
+  async init(): Promise<void> {
     await this.ensureConnection();
     const db = this.client.db();
     this.usersCollection = db.collection('users');
@@ -25,14 +24,121 @@ export class UserService extends DatabaseService {
   }
 
   private async createIndexes(): Promise<void> {
-    await this.usersCollection.createIndex({ id: 1 }, { unique: true });
-    await this.usersCollection.createIndex({ email: 1 }, { unique: true });
-    await this.usersCollection.createIndex({ "preferences.favoriteTopics": 1 });
-    
+    await this.usersCollection.createIndex({ id: 1 }, {
+      unique: true,
+      partialFilterExpression: { id: { $type: "string" } }
+    });
+
     await this.quizResultsCollection.createIndex({ userId: 1 });
-    await this.quizResultsCollection.createIndex({ quizId: 1 });
-    await this.quizResultsCollection.createIndex({ topic: 1 });
-    await this.quizResultsCollection.createIndex({ completedAt: 1 });
+    await this.quizResultsCollection.createIndex({ completedAt: -1 });
+  }
+
+  async getUserQuizResults(userId: string): Promise<QuizResult[]> {
+    await this.ensureConnection();
+    const results = await this.withRetry(() => 
+      this.quizResultsCollection.find({ userId }).sort({ completedAt: -1 }).toArray()
+    );
+    return results.map(doc => ({
+      userId: doc.userId,
+      quizId: doc.quizId,
+      score: doc.score,
+      topic: doc.topic,
+      difficulty: doc.difficulty,
+      completedAt: doc.completedAt,
+      answers: doc.answers
+    }));
+  }
+
+  async calculateUserStatistics(userId: string): Promise<UserStatistics> {
+    const quizResults = await this.getUserQuizResults(userId);
+    
+    if (quizResults.length === 0) {
+      return {
+        totalQuizzesCompleted: 0,
+        averageScore: 0,
+        topicPerformance: {},
+        recommendedDifficulty: 'basic',
+        quizzesCompletedOverTime: [],
+        lastActive: new Date()
+      };
+    }
+
+    // Calculate total and average scores
+    const totalScore = quizResults.reduce((sum, result) => sum + result.score, 0);
+    const averageScore = totalScore / quizResults.length;
+
+    // Calculate topic performance
+    const topicPerformance: Record<string, {
+      completed: number;
+      averageScore: number;
+      strengths: string[];
+      weaknesses: string[];
+    }> = {};
+
+    quizResults.forEach(result => {
+      if (!topicPerformance[result.topic]) {
+        topicPerformance[result.topic] = {
+          completed: 0,
+          averageScore: 0,
+          strengths: [],
+          weaknesses: []
+        };
+      }
+
+      const topic = topicPerformance[result.topic];
+      topic.completed++;
+      topic.averageScore = (topic.averageScore * (topic.completed - 1) + result.score) / topic.completed;
+
+      // Analyze strengths and weaknesses
+      result.answers.forEach(answer => {
+        const concept = answer.questionId.split('_')[0];
+        if (answer.correct && !topic.strengths.includes(concept)) {
+          topic.strengths.push(concept);
+        } else if (!answer.correct && !topic.weaknesses.includes(concept)) {
+          topic.weaknesses.push(concept);
+        }
+      });
+    });
+
+    // Determine recommended difficulty
+    let recommendedDifficulty: 'basic' | 'intermediate' | 'advanced' = 'basic';
+    if (averageScore >= 90) {
+      recommendedDifficulty = 'advanced';
+    } else if (averageScore >= 70) {
+      recommendedDifficulty = 'intermediate';
+    }
+
+    // Calculate quizzes completed over time
+    const quizzesCompletedOverTime = quizResults
+      .sort((a, b) => a.completedAt.getTime() - b.completedAt.getTime())
+      .map((result, index) => ({
+        date: result.completedAt.toISOString().split('T')[0],
+        count: index + 1
+      }));
+
+    return {
+      totalQuizzesCompleted: quizResults.length,
+      averageScore,
+      topicPerformance,
+      recommendedDifficulty,
+      quizzesCompletedOverTime,
+      lastActive: quizResults[quizResults.length - 1].completedAt
+    };
+  }
+
+  async getUserTopicResults(userId: string, topic: string): Promise<QuizResult[]> {
+    const results = await this.withRetry(() => 
+      this.quizResultsCollection.find({ userId, topic }).sort({ completedAt: -1 }).toArray()
+    );
+    return results.map(doc => ({
+      userId: doc.userId,
+      quizId: doc.quizId,
+      score: doc.score,
+      topic: doc.topic,
+      difficulty: doc.difficulty,
+      completedAt: doc.completedAt,
+      answers: doc.answers
+    }));
   }
 
   async createUser(username: string, email: string, favoriteTopics: string[] = []): Promise<User> {
@@ -123,18 +229,6 @@ export class UserService extends DatabaseService {
   // Quiz results management
   async saveQuizResult(result: QuizResult): Promise<void> {
     await this.withRetry(() => this.quizResultsCollection.insertOne(result));
-  }
-  
-  async getUserQuizResults(userId: string): Promise<QuizResult[]> {
-    return await this.withRetry(() => 
-      this.quizResultsCollection.find({ userId }).sort({ completedAt: -1 }).toArray()
-    );
-  }
-  
-  async getUserTopicResults(userId: string, topic: string): Promise<QuizResult[]> {
-    return await this.withRetry(() => 
-      this.quizResultsCollection.find({ userId, topic }).sort({ completedAt: -1 }).toArray()
-    );
   }
   
   async getUserStatistics(userId: string): Promise<UserStatistics | null> {
