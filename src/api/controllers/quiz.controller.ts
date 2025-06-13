@@ -118,8 +118,15 @@ export class QuizController {
         res.status(200).json([]);
         return;
       }
-      
-      const quizzes = sessions.map(session => ({
+      // Lọc trùng topic, chỉ lấy quiz mới nhất cho mỗi topic
+      const topicMap = new Map<string, any>();
+      sessions.forEach(session => {
+        const prev = topicMap.get(session.topic);
+        if (!prev || new Date(session.createdAt) > new Date(prev.createdAt)) {
+          topicMap.set(session.topic, session);
+        }
+      });
+      const quizzes = Array.from(topicMap.values()).map(session => ({
         id: session.id,
         topic: session.topic,
         questionCount: session.quiz?.questions?.length || 0,
@@ -127,7 +134,6 @@ export class QuizController {
         updatedAt: session.updatedAt,
         score: session.evaluation?.score
       }));
-      
       res.status(200).json(quizzes);
     } catch (error) {
       console.error('Error retrieving quizzes:', error);
@@ -135,39 +141,6 @@ export class QuizController {
     }
   };
 
-  // Get quiz by ID
-  getQuizById = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { id } = req.params;
-      
-      if (!id) {
-        res.status(400).json({ error: 'Quiz ID is required' });
-        return;
-      }
-      
-      const session = await this.quizService.getSession(id);
-      
-      if (!session) {
-        res.status(404).json({ error: 'Quiz not found' });
-        return;
-      }
-      
-      const response = {
-        id: session.id,
-        topic: session.topic,
-        quiz: session.quiz,
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt,
-        evaluation: session.evaluation,
-        similarTopics: session.similarTopics
-      };
-      
-      res.status(200).json(response);
-    } catch (error) {
-      console.error('Error retrieving quiz:', error);
-      res.status(500).json({ error: 'Failed to retrieve quiz' });
-    }
-  };
 
   // Get quizzes by topic
   getQuizzesByTopic = async (req: Request, res: Response): Promise<void> => {
