@@ -11,28 +11,18 @@ export interface User {
 }
 
 export interface QuizResult {
-  id: string;
   userId: string;
   quizId: string;
-  topic: string;
   score: number;
-  correctAnswers: number;
-  totalQuestions: number;
-  difficultyBreakdown: {
-    basic: {
-      correct: number;
-      total: number;
-    };
-    intermediate: {
-      correct: number;
-      total: number;
-    };
-    advanced: {
-      correct: number;
-      total: number;
-    };
-  };
+  topic: string;
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
   completedAt: Date;
+  answers: Array<{
+    questionId: string;
+    userAnswer: any;
+    correct: boolean;
+    timeTaken?: number;
+  }>;
 }
 
 export interface UserStatistics {
@@ -47,10 +37,10 @@ export interface UserStatistics {
     }
   };
   recommendedDifficulty: 'basic' | 'intermediate' | 'advanced';
-  quizzesCompletedOverTime: {
+  quizzesCompletedOverTime: Array<{
     date: string;
     count: number;
-  }[];
+  }>;
   lastActive: Date;
 }
 
@@ -58,5 +48,5 @@ export interface TopicRecommendation {
   topic: string;
   relevanceScore: number;
   basedOn: string[];
-  difficulty: 'basic' | 'intermediate' | 'advanced';
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
 } 

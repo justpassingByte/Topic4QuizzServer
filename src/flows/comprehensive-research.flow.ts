@@ -38,59 +38,29 @@ export class ComprehensiveResearchFlow {
     );
   }
 
-  async analyze(topic: string): Promise<ComprehensiveAnalysis> {
-    // console.log(`Starting comprehensive analysis for topic: ${topic}`);
+  async analyze(topic: string): Promise<ComprehensiveAnalysis & { searchAnalysis: AIAnalysisOutput }> {
+    // Chỉ thực hiện bước search web cho topic chính, bỏ context analysis và subtopic
+    // const contextAnalysis = await this.contextAnalyzer.analyze(topic);
+    // const prioritizedSubtopics = this.prioritizeSubtopics(
+    //   contextAnalysis.keyConcepts.map(c => c.name),
+    //   contextAnalysis.suggestedTopics || []
+    // );
 
-    // Step 1: Analyze context to identify subtopics
-    // console.log('Step 1: Analyzing context...');
-    const contextAnalysis = await this.contextAnalyzer.analyze(topic);
-    // console.log(`Found ${contextAnalysis.keyConcepts.length} key concepts and ${contextAnalysis.suggestedTopics?.length || 0} suggested topics`);
+    // Search and analyze web content for the main topic
+    const searchAnalysis = await this.searchAnalysisAgent.searchAndAnalyze(topic, {
+      searchResultLimit: 5,
+      maxTokens: 1000,
+      temperature: 0.3
+    });
 
-    // Step 2: Select and prioritize subtopics
-    // console.log('Step 2: Selecting priority subtopics...');
-    const prioritizedSubtopics = this.prioritizeSubtopics(
-      contextAnalysis.keyConcepts.map(c => c.name),
-      contextAnalysis.suggestedTopics || []
-    );
-
-    // Step 3: Search and analyze web content for each subtopic
-    // console.log(`Step 3: Analyzing ${prioritizedSubtopics.length} selected subtopics...`);
-    const subtopicAnalyses: SubtopicAnalysis[] = [];
-    
-    for (const subtopic of prioritizedSubtopics) {
-      // console.log(`Analyzing web content for subtopic: ${subtopic}`);
-      
-      // Perform web search analysis
-      const searchQuery = `${topic} ${subtopic}`;
-      const searchAnalysis = await this.searchAnalysisAgent.searchAndAnalyze(searchQuery, {
-        searchResultLimit: 5,
-        maxTokens: 1000,
-        temperature: 0.3
-      });
-
-      subtopicAnalyses.push({
-        name: subtopic,
-        searchAnalysis
-      });
-    }
-
-    // Step 4: Calculate overall metrics
-    const overallDifficulty = this.calculateOverallDifficulty(
-      contextAnalysis.difficulty,
-      subtopicAnalyses
-    );
-
-    const estimatedStudyTime = this.calculateEstimatedStudyTime(
-      contextAnalysis.estimatedTime || 0,
-      subtopicAnalyses
-    );
-
+    // Không còn subtopic, context analysis, chỉ trả về kết quả search cho topic chính
     return {
       mainTopic: topic,
-      contextAnalysis,
-      subtopicAnalyses,
-      overallDifficulty,
-      estimatedStudyTime
+      contextAnalysis: undefined as any, // hoặc null nếu cần
+      subtopicAnalyses: [],
+      overallDifficulty: 'intermediate', // hoặc lấy từ searchAnalysis nếu có
+      estimatedStudyTime: 30, // hoặc lấy từ searchAnalysis nếu có
+      searchAnalysis // Thêm trường searchAnalysis vào kết quả trả về
     };
   }
 
@@ -151,5 +121,9 @@ export class ComprehensiveResearchFlow {
     });
 
     return Math.ceil(totalTime);
+  }
+
+  public getSearchAnalysisAgent(): SearchAnalysisAgent {
+    return this.searchAnalysisAgent;
   }
 } 

@@ -84,11 +84,8 @@ export class QuizController {
 
       const quiz = await this.flow.generateQuiz(topic, config);
       
-      // Get similar topics for recommendations
-      const similarTopics = await this.userService.getSimilarTopics(topic);
-      
       // Create a session
-      const session = await this.quizService.createSession(topic, quiz, similarTopics);
+      const session = await this.quizService.createSession(topic, quiz, []);
       
       // If userId is provided, suggest adding the topic to favorites
       let topicRecommendation = null;
@@ -104,7 +101,6 @@ export class QuizController {
       
       res.json({
         ...session,
-        similarTopics,
         topicRecommendation
       });
     } catch (error) {

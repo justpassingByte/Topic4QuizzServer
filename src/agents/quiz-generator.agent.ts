@@ -11,6 +11,7 @@ import {
   Difficulty
 } from '../models/quiz.model';
 import { PromptBuilderAgent } from './prompt-builder.agent';
+import { parseJSON } from '../utils/json-parser.util';
 
 interface RawQuestion {
   id?: string;
@@ -113,11 +114,11 @@ export class QuizGeneratorAgent {
       const formattedPrompt = `
 Generate a quiz about ${topic} with the following requirements:
 
-Topic Analysis:
-${config.analysisResults?.mainSummary}
+Web Search Result:
+${config.analysisResults?.mainSummary && config.analysisResults.mainSummary.trim() !== '' ? config.analysisResults.mainSummary : 'No web search result available.'}
 
-Key Concepts:
-${config.analysisResults?.importantPoints?.map((point, index) => `${index + 1}. ${point}`).join('\n')}
+Web Key Concepts:
+${Array.isArray(config.analysisResults?.importantPoints) && config.analysisResults.importantPoints.length > 0 ? config.analysisResults.importantPoints.map((point, index) => `${index + 1}. ${point}`).join('\n') : 'No key concepts found.'}
 
 Requirements:
 - Total Questions: ${config.questionCount}
@@ -159,8 +160,8 @@ Return ONLY valid JSON, no additional text or markdown.`;
 
       // console.log('Raw model response:', response.content);
 
-      const parsedResponse = JSON.parse(response.content);
-      if (!parsedResponse.questions?.length) {
+      const parsedResponse = parseJSON(response.content) as any;
+      if (!parsedResponse?.questions?.length) {
         throw new Error('Invalid response format: missing questions array');
       }
 
