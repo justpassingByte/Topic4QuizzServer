@@ -118,8 +118,15 @@ export class QuizController {
         res.status(200).json([]);
         return;
       }
-      
-      const quizzes = sessions.map(session => ({
+      // Lọc trùng topic, chỉ lấy quiz mới nhất cho mỗi topic
+      const topicMap = new Map<string, any>();
+      sessions.forEach(session => {
+        const prev = topicMap.get(session.topic);
+        if (!prev || new Date(session.createdAt) > new Date(prev.createdAt)) {
+          topicMap.set(session.topic, session);
+        }
+      });
+      const quizzes = Array.from(topicMap.values()).map(session => ({
         id: session.id,
         topic: session.topic,
         questionCount: session.quiz?.questions?.length || 0,
@@ -127,7 +134,6 @@ export class QuizController {
         updatedAt: session.updatedAt,
         score: session.evaluation?.score
       }));
-      
       res.status(200).json(quizzes);
     } catch (error) {
       console.error('Error retrieving quizzes:', error);

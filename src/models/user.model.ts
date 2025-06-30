@@ -2,12 +2,14 @@ export interface User {
   id: string;
   username: string;
   email: string;
+  password?: string;
   preferences: {
     favoriteTopics: string[];
     difficultyPreference?: 'basic' | 'intermediate' | 'advanced';
   };
   createdAt: Date;
   updatedAt?: Date;
+  quizResults?: QuizResult[];
 }
 
 export interface QuizResult {

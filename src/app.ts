@@ -10,8 +10,9 @@ import userRoutes from './api/routes/user.routes';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
+// const PORT = process.env.PORT || 3000;
+const PORT = 3000;
+const HOST = '192.168.1.5';
 // Middleware
 app.use(cors());
 app.use(helmet());
@@ -28,7 +29,7 @@ app.use('*', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
 

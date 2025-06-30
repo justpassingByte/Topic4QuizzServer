@@ -8,6 +8,7 @@ const contextAnalysisController = new ContextAnalysisController();
 
 // User management routes
 router.post('/users', userController.createUser);
+router.post('/auth/login', userController.loginUser);
 router.get('/users/:id', userController.getUserById);
 router.put('/users/:id/topics', userController.updateFavoriteTopics);
 

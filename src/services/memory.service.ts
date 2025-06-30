@@ -683,18 +683,19 @@ export class MemoryService {
   }
 
   // User management methods
-  async createUser(username: string, email: string, favoriteTopics: string[] = []): Promise<User> {
+  async createUser(username: string, email: string, hashedPassword: string, favoriteTopics: string[] = []): Promise<User> {
+    await this.ensureConnection();
     const user: User = {
       id: uuidv4(),
       username,
       email,
+      password: hashedPassword,
       preferences: {
-        favoriteTopics
+        favoriteTopics,
       },
-      createdAt: new Date()
+      createdAt: new Date(),
     };
-    
-    await this.withRetry(() => this.usersCollection.insertOne(user));
+    await this.usersCollection.insertOne(user);
     return user;
   }
   
