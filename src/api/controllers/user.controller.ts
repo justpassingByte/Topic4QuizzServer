@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import * as bcrypt from 'bcryptjs';
 import { MemoryService } from '../../services/memory.service';
 import { User, QuizResult, UserStatistics } from '../../models/user.model';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,11 +14,11 @@ export class UserController {
   // Create or update user
   createUser = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { username, email, favoriteTopics } = req.body;
+      const { username, email, password, favoriteTopics } = req.body;
 
       // Validate required fields
-      if (!username || !email) {
-        res.status(400).json({ error: 'Username and email are required' });
+      if (!username || !email || !password) {
+        res.status(400).json({ error: 'Username, email, and password are required' });
         return;
       }
 
@@ -28,12 +29,49 @@ export class UserController {
         return;
       }
 
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10); // Salt rounds = 10
+
       // Create new user
-      const user = await this.memory.createUser(username, email, favoriteTopics || []);
+      const user = await this.memory.createUser(username, email, hashedPassword, favoriteTopics || []);
       res.status(201).json(user);
     } catch (error) {
       console.error('Error creating user:', error);
       res.status(500).json({ error: 'Failed to create user' });
+    }
+  };
+
+  // Login user
+  loginUser = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { email, password } = req.body;
+
+      // Validate required fields
+      if (!email || !password) {
+        res.status(400).json({ error: 'Email and password are required' });
+        return;
+      }
+
+      // Check if user exists
+      const user = await this.memory.getUserByEmail(email);
+      if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      // Compare password
+      const isMatch = await bcrypt.compare(password, user.password || '');
+      if (!isMatch) {
+        res.status(401).json({ error: 'Invalid credentials' });
+        return;
+      }
+
+      // Return user data (exclude password)
+      const { password: _, ...userWithoutPassword } = user;
+      res.status(200).json(userWithoutPassword);
+    } catch (error) {
+      console.error('Error logging in user:', error);
+      res.status(500).json({ error: 'Failed to login user' });
     }
   };
 
