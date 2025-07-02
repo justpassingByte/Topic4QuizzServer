@@ -3,6 +3,7 @@ export interface User {
   username: string;
   email: string;
   password?: string;
+  score?: number;
   preferences: {
     favoriteTopics: string[];
     difficultyPreference?: 'basic' | 'intermediate' | 'advanced';
@@ -17,7 +18,7 @@ export interface QuizResult {
   quizId: string;
   score: number;
   topic: string;
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  difficulty: 'basic' | 'intermediate' | 'advanced';
   completedAt: Date;
   answers: Array<{
     questionId: string;
@@ -50,5 +51,5 @@ export interface TopicRecommendation {
   topic: string;
   relevanceScore: number;
   basedOn: string[];
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  difficulty: 'basic' | 'intermediate' | 'advanced';
 } 

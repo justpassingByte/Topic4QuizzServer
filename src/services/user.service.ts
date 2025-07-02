@@ -24,13 +24,25 @@ export class UserService extends DatabaseService {
   }
 
   private async createIndexes(): Promise<void> {
-    await this.usersCollection.createIndex({ id: 1 }, {
-      unique: true,
-      partialFilterExpression: { id: { $type: "string" } }
-    });
+    try {
+      await this.usersCollection.createIndex({ id: 1 }, {
+        unique: true,
+        partialFilterExpression: { id: { $type: "string" } }
+      });
+    } catch (error: any) {
+      if (error.code !== 85 && error.code !== 86) {
+        console.error("Error creating index for usersCollection:", error);
+      }
+    }
 
-    await this.quizResultsCollection.createIndex({ userId: 1 });
-    await this.quizResultsCollection.createIndex({ completedAt: -1 });
+    try {
+      await this.quizResultsCollection.createIndex({ userId: 1 });
+      await this.quizResultsCollection.createIndex({ completedAt: -1 });
+    } catch (error: any) {
+      if (error.code !== 85 && error.code !== 86) {
+        console.error("Error creating index for quizResultsCollection:", error);
+      }
+    }
   }
 
   async getUserQuizResults(userId: string): Promise<QuizResult[]> {
@@ -141,11 +153,13 @@ export class UserService extends DatabaseService {
     }));
   }
 
-  async createUser(username: string, email: string, favoriteTopics: string[] = []): Promise<User> {
+  async createUser(username: string, email: string, password?: string, favoriteTopics: string[] = []): Promise<User> {
     const user: User = {
       id: uuidv4(),
       username,
       email,
+      password,
+      score: 0,
       preferences: {
         favoriteTopics
       },
@@ -223,6 +237,28 @@ export class UserService extends DatabaseService {
           { "similarTopics": { $in: user.preferences.favoriteTopics } }
         ]
       }).toArray()
+    );
+  }
+  
+  async updateUserScore(userId: string, score: number): Promise<void> {
+    await this.withRetry(() =>
+      this.usersCollection.updateOne(
+        { id: userId },
+        { 
+          $inc: { score: score },
+          $set: { "updatedAt": new Date() }
+        }
+      )
+    );
+  }
+
+  async getLeaderboard(limit: number = 10): Promise<User[]> {
+    await this.ensureConnection();
+    return await this.withRetry(() =>
+      this.usersCollection.find()
+        .sort({ score: -1 })
+        .limit(limit)
+        .toArray()
     );
   }
   

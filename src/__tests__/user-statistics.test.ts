@@ -37,7 +37,7 @@ describe('User Statistics', () => {
         quizId: 'quiz1',
         score: 80,
         topic: 'javascript',
-        difficulty: 'beginner',
+        difficulty: 'basic',
         completedAt: new Date(),
         answers: [
           { questionId: 'functions_1', userAnswer: 'answer1', correct: true },

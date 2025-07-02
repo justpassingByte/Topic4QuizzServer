@@ -29,7 +29,7 @@ describe('User Statistics and Quiz Evaluation Tests', () => {
       quizId: mockQuizId,
       score: 80,
       topic: 'JavaScript',
-      difficulty: 'beginner',
+      difficulty: 'basic',
       completedAt: new Date(),
       answers: [
         { questionId: 'arrays_1', userAnswer: 'array.push()', correct: true },

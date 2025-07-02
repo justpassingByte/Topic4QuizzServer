@@ -68,7 +68,7 @@ describe('Service Integration Tests', () => {
           question: 'Which is not a JavaScript data type?',
           options: ['string', 'number', 'boolean', 'float'],
           correctAnswer: 'float',
-          difficulty: 'beginner',
+          difficulty: 'basic',
           topics: ['javascript'],
           created: new Date(),
           updated: new Date()
@@ -125,7 +125,7 @@ describe('Service Integration Tests', () => {
         quizId: mockQuiz.id,
         score: evaluationResult.score,
         topic: 'javascript',
-        difficulty: 'beginner',
+        difficulty: 'basic',
         completedAt: new Date(),
         answers: evaluationResult.feedback?.map(fb => ({
           questionId: fb.questionId,
@@ -169,7 +169,7 @@ describe('Service Integration Tests', () => {
         quizId: mockQuiz.id,
         score: evaluationResult.finalScore || evaluationResult.score,
         topic: 'javascript',
-        difficulty: 'beginner',
+        difficulty: 'basic',
         completedAt: new Date(),
         answers: evaluationResult.feedback?.map(fb => ({
           questionId: fb.questionId,
