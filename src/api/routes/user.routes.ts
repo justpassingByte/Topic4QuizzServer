@@ -1,15 +1,16 @@
 import { Router } from 'express';
 import { UserController } from '../controllers/user.controller';
 import { ContextAnalysisController } from '../controllers/context-analysis.controller';
+import { UserService } from '../../services/user.service';
 
 const router = Router();
-const userController = new UserController();
+const userController = new UserController(new UserService());
 const contextAnalysisController = new ContextAnalysisController();
 
 // User management routes
 router.post('/users', userController.createUser);
-router.post('/auth/login', userController.loginUser);
 router.get('/users/:id', userController.getUserById);
+router.get('/leaderboard', userController.getLeaderboard);
 router.put('/users/:id/topics', userController.updateFavoriteTopics);
 
 // Personalization routes

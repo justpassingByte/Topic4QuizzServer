@@ -15,6 +15,7 @@ router.get('/quizzes/topic/:topic', quizController.getQuizzesByTopic);
 router.get('/quizzes/subtopic/:subtopic', quizController.getQuizzesBySubtopic);
 router.get('/quizzes/:id', quizController.getQuizById);
 router.post('/quizzes/evaluate', quizController.evaluateQuiz);
+router.post('/quizzes/submit-result', quizController.submitResult);
 
 // Quiz feedback and evaluation routes
 router.post('/quizzes/:quizId/feedback', quizController.submitQuizFeedback);

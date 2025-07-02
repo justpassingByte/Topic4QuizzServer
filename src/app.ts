@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import quizRoutes from './api/routes/quiz.routes';
 import userRoutes from './api/routes/user.routes';
+import authRoutes from './api/routes/auth.routes';
 
 // Load environment variables
 dotenv.config();
@@ -22,6 +23,7 @@ app.use(express.json());
 // Routes
 app.use('/api', quizRoutes);
 app.use('/api', userRoutes);
+app.use('/api/auth', authRoutes);
 
 // Fallback route
 app.use('*', (req, res) => {

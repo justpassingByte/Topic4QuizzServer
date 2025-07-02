@@ -1,14 +1,16 @@
 import { Request, Response } from 'express';
 import * as bcrypt from 'bcryptjs';
-import { MemoryService } from '../../services/memory.service';
 import { User, QuizResult, UserStatistics } from '../../models/user.model';
 import { v4 as uuidv4 } from 'uuid';
+import { UserService } from '../../services/user.service';
+import { QuizSession } from '../../models/quiz.model';
 
 export class UserController {
-  private memory: MemoryService;
+  private userService: UserService;
 
-  constructor() {
-    this.memory = new MemoryService();
+  constructor(userService: UserService) {
+    this.userService = userService;
+    this.userService.init();
   }
 
   // Create or update user
@@ -23,7 +25,7 @@ export class UserController {
       }
 
       // Check if user already exists
-      const existingUser = await this.memory.getUserByEmail(email);
+      const existingUser = await this.userService.getUserByEmail(email);
       if (existingUser) {
         res.status(409).json({ error: 'User with this email already exists' });
         return;
@@ -32,9 +34,12 @@ export class UserController {
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10); // Salt rounds = 10
 
-      // Create new user
-      const user = await this.memory.createUser(username, email, hashedPassword, favoriteTopics || []);
-      res.status(201).json(user);
+      // Create new user using UserService
+      const user = await this.userService.createUser(username, email, hashedPassword, favoriteTopics || []);
+      
+      // Return user data (exclude password)
+      const { password: _, ...userWithoutPassword } = user;
+      res.status(201).json(userWithoutPassword);
     } catch (error) {
       console.error('Error creating user:', error);
       res.status(500).json({ error: 'Failed to create user' });
@@ -52,8 +57,8 @@ export class UserController {
         return;
       }
 
-      // Check if user exists
-      const user = await this.memory.getUserByEmail(email);
+      // Check if user exists using UserService
+      const user = await this.userService.getUserByEmail(email);
       if (!user) {
         res.status(404).json({ error: 'User not found' });
         return;
@@ -85,14 +90,15 @@ export class UserController {
         return;
       }
       
-      const user = await this.memory.getUserById(id);
+      const user = await this.userService.getUserById(id);
       
       if (!user) {
         res.status(404).json({ error: 'User not found' });
         return;
       }
       
-      res.status(200).json(user);
+      const { password: _, ...userWithoutPassword } = user;
+      res.status(200).json(userWithoutPassword);
     } catch (error) {
       console.error('Error retrieving user:', error);
       res.status(500).json({ error: 'Failed to retrieve user' });
@@ -105,34 +111,27 @@ export class UserController {
       const { id } = req.params;
       const { topics, action } = req.body;
       
-      if (!id) {
-        res.status(400).json({ error: 'User ID is required' });
+      if (!id || !topics || !Array.isArray(topics)) {
+        res.status(400).json({ error: 'User ID and topics array are required' });
         return;
       }
       
-      if (!topics || !Array.isArray(topics)) {
-        res.status(400).json({ error: 'Topics must be an array' });
-        return;
-      }
-      
-      const user = await this.memory.getUserById(id);
+      const user = await this.userService.getUserById(id);
       
       if (!user) {
         res.status(404).json({ error: 'User not found' });
         return;
       }
       
-      // Add or remove topics based on action
       if (action === 'add') {
-        await this.memory.addFavoriteTopics(id, topics);
+        await this.userService.addFavoriteTopics(id, topics);
       } else if (action === 'remove') {
-        await this.memory.removeFavoriteTopics(id, topics);
+        await this.userService.removeFavoriteTopics(id, topics);
       } else {
-        // Replace all topics
-        await this.memory.updateUserPreferences(id, { favoriteTopics: topics });
+        await this.userService.updateUserPreferences(id, { favoriteTopics: topics });
       }
       
-      const updatedUser = await this.memory.getUserById(id);
+      const updatedUser = await this.userService.getUserById(id);
       res.status(200).json(updatedUser);
     } catch (error) {
       console.error('Error updating favorite topics:', error);
@@ -150,18 +149,11 @@ export class UserController {
         return;
       }
       
-      const user = await this.memory.getUserById(id);
-      
-      if (!user) {
-        res.status(404).json({ error: 'User not found' });
-        return;
-      }
-      
-      const quizzes = await this.memory.getQuizzesByUserPreferences(id);
+      const quizzes = await this.userService.getQuizzesByUserPreferences(id);
       
       res.status(200).json({
         count: quizzes.length,
-        quizzes: quizzes.map(session => ({
+        quizzes: quizzes.map((session: QuizSession) => ({
           id: session.id,
           topic: session.topic,
           questionCount: session.quiz?.questions?.length || 0,
@@ -178,16 +170,14 @@ export class UserController {
   // Save quiz result
   saveQuizResult = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { userId, quizId, topic, score, correctAnswers, totalQuestions, difficultyBreakdown } = req.body;
+      const { userId, quizId, topic, score, answers, difficulty } = req.body;
       
-      // Validate required fields
-      if (!userId || !quizId || !topic || score === undefined || !correctAnswers || !totalQuestions || !difficultyBreakdown) {
+      if (!userId || !quizId || !topic || score === undefined || !answers) {
         res.status(400).json({ error: 'Missing required fields' });
         return;
       }
       
-      const user = await this.memory.getUserById(userId);
-      
+      const user = await this.userService.getUserById(userId);
       if (!user) {
         res.status(404).json({ error: 'User not found' });
         return;
@@ -198,12 +188,13 @@ export class UserController {
         quizId,
         topic,
         score,
-        difficulty: 'beginner',
+        difficulty: difficulty || 'intermediate',
         completedAt: new Date(),
-        answers: []
+        answers
       };
       
-      await this.memory.saveQuizResult(result);
+      await this.userService.saveQuizResult(result);
+      await this.userService.updateUserScore(userId, score); // Also update total score
       
       res.status(201).json(result);
     } catch (error) {
@@ -222,14 +213,7 @@ export class UserController {
         return;
       }
       
-      const user = await this.memory.getUserById(id);
-      
-      if (!user) {
-        res.status(404).json({ error: 'User not found' });
-        return;
-      }
-      
-      const statistics = await this.memory.getUserStatistics(id);
+      const statistics = await this.userService.getUserStatistics(id);
       
       if (!statistics) {
         res.status(200).json({ message: 'No quiz results found for this user' });
@@ -247,32 +231,28 @@ export class UserController {
   getTopicRecommendations = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const { limit = 5 } = req.query;
-      
+
       if (!id) {
         res.status(400).json({ error: 'User ID is required' });
         return;
       }
-      
-      const user = await this.memory.getUserById(id);
-      
-      if (!user) {
-        res.status(404).json({ error: 'User not found' });
-        return;
-      }
-      
-      const recommendations = await this.memory.getTopicRecommendations(
-        id, 
-        typeof limit === 'string' ? parseInt(limit, 10) : 5
-      );
-      
-      res.status(200).json({
-        count: recommendations.length,
-        recommendations
-      });
+
+      const recommendations = await this.userService.getTopicRecommendations(id);
+      res.status(200).json(recommendations);
     } catch (error) {
       console.error('Error retrieving topic recommendations:', error);
       res.status(500).json({ error: 'Failed to retrieve topic recommendations' });
+    }
+  };
+
+  getLeaderboard = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+      const leaderboard = await this.userService.getLeaderboard(limit);
+      res.status(200).json(leaderboard);
+    } catch (error) {
+      console.error('Error fetching leaderboard:', error);
+      res.status(500).json({ error: 'Failed to fetch leaderboard' });
     }
   };
 } 

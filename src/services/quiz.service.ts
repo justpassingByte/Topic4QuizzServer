@@ -38,38 +38,58 @@ export class QuizService extends DatabaseService {
   }
 
   private async createIndexes(): Promise<void> {
-    await this.quizCollection.createIndex(
-      { id: 1 },
-      { 
-        unique: true,
-        partialFilterExpression: { id: { $type: "string" } }
+    const collectionsWithIndexes: { collection: Collection<any>; indexes: any[] }[] = [
+      {
+        collection: this.quizCollection,
+        indexes: [
+          { spec: { id: 1 }, options: { unique: true, partialFilterExpression: { id: { $type: "string" } } } },
+          { spec: { topic: 1 }, options: {} }
+        ]
+      },
+      {
+        collection: this.quizzesCollection,
+        indexes: [
+          { spec: { id: 1 }, options: { unique: true, partialFilterExpression: { id: { $type: "string" } } } },
+          { spec: { topic: 1 }, options: {} }
+        ]
+      },
+      {
+        collection: this.quizFeedbackCollection,
+        indexes: [
+          { spec: { quizId: 1 }, options: {} },
+          { spec: { userId: 1 }, options: {} }
+        ]
+      },
+      {
+        collection: this.quizRevisionsCollection,
+        indexes: [
+          { spec: { quizId: 1 }, options: {} },
+          { spec: { revisionNumber: 1 }, options: {} }
+        ]
+      },
+      {
+        collection: this.quizUpdateSchedulesCollection,
+        indexes: [
+          { spec: { quizId: 1 }, options: {} },
+          { spec: { scheduledDate: 1 }, options: {} },
+          { spec: { isCompleted: 1 }, options: {} }
+        ]
       }
-    );
+    ];
 
-    await this.quizCollection.createIndex({ topic: 1 });
-
-    await this.quizzesCollection.createIndex(
-      { id: 1 },
-      { 
-        unique: true,
-        partialFilterExpression: { id: { $type: "string" } }
+    for (const { collection, indexes } of collectionsWithIndexes) {
+      for (const index of indexes) {
+        try {
+          await collection.createIndex(index.spec, index.options);
+        } catch (error: any) {
+          // Code 85: IndexOptionsConflict (index with same name but different options)
+          // Code 86: IndexKeySpecsConflict (index with same options)
+          if (error.code !== 85 && error.code !== 86) {
+            console.error(`Error creating index for ${collection.collectionName}:`, error);
+          }
+        }
       }
-    );
-
-    await this.quizzesCollection.createIndex({ topic: 1 });
-    
-    // Indexes for quiz feedback
-    await this.quizFeedbackCollection.createIndex({ quizId: 1 });
-    await this.quizFeedbackCollection.createIndex({ userId: 1 });
-    
-    // Indexes for quiz revisions
-    await this.quizRevisionsCollection.createIndex({ quizId: 1 });
-    await this.quizRevisionsCollection.createIndex({ revisionNumber: 1 });
-    
-    // Indexes for update schedules
-    await this.quizUpdateSchedulesCollection.createIndex({ quizId: 1 });
-    await this.quizUpdateSchedulesCollection.createIndex({ scheduledDate: 1 });
-    await this.quizUpdateSchedulesCollection.createIndex({ isCompleted: 1 });
+    }
   }
 
   async saveSession(session: QuizSession): Promise<void> {

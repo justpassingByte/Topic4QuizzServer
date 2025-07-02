@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { QuizGenerationFlow } from '../../flows/quiz-generation.flow';
-import { QuizGenerationConfig, DifficultyDistribution, Difficulty, QuizEvaluation, QuizFeedback } from '../../models/quiz.model';
+import { QuizGenerationConfig, DifficultyDistribution, Difficulty, QuizEvaluation, QuizFeedback, Question, MultipleChoiceQuestion, CodingQuestion } from '../../models/quiz.model';
 import { QuizService } from '../../services/quiz.service';
 import { UserService } from '../../services/user.service';
 import { defaultQuizConfig, validateQuizConfig, getQuizConfigForLevel, difficultyPresets } from '../../config/quiz.config';
@@ -8,16 +8,20 @@ import { ModelConfigService } from '../../services/model-config.service';
 import { ModelAdapterService } from '../../services/model-adapter.service';
 import { QuizGeneratorAgent } from '../../agents/quiz-generator.agent';
 import { PromptBuilderAgent } from '../../agents/prompt-builder.agent';
+import { ContextAnalyzer } from '../../agents/context-analyzer.agent';
+import { QuizResult } from '../../models/user.model';
 
 export class QuizController {
   private flow: QuizGenerationFlow;
   private quizService: QuizService;
   private userService: UserService;
+  private contextAnalyzer: ContextAnalyzer;
 
   constructor(private readonly modelConfigService: ModelConfigService) {
     const modelAdapterService = new ModelAdapterService();
     const quizGenerator = new QuizGeneratorAgent(modelAdapterService, modelConfigService);
     const promptBuilder = new PromptBuilderAgent(modelAdapterService, modelConfigService);
+    this.contextAnalyzer = new ContextAnalyzer(modelConfigService, modelAdapterService);
     
     this.flow = new QuizGenerationFlow(
       modelAdapterService,
@@ -27,6 +31,7 @@ export class QuizController {
     );
     this.quizService = new QuizService();
     this.userService = new UserService();
+    this.userService.init();
   }
 
   // Health check endpoint
@@ -35,7 +40,7 @@ export class QuizController {
   };
 
   private validateDifficulty(difficulty: string): Difficulty {
-    const validDifficulties: Difficulty[] = ['basic', 'intermediate', 'advanced'];
+    const validDifficulties: Difficulty[] = ['intermediate', 'advanced', 'basic'];
     return validDifficulties.includes(difficulty as Difficulty) 
       ? difficulty as Difficulty 
       : 'intermediate';
@@ -221,59 +226,210 @@ export class QuizController {
   // Evaluate a quiz
   evaluateQuiz = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { quizId, topic } = req.body;
+      const { quizId, userId, answers } = req.body;
       
-      if (!quizId) {
-        res.status(400).json({ error: 'Quiz ID is required' });
+      if (!quizId || !userId || !answers) {
+        res.status(400).json({ error: 'Quiz ID, User ID, and answers are required' });
         return;
       }
       
       const session = await this.quizService.getSession(quizId);
       
-      if (!session) {
+      if (!session || !session.quiz) {
         res.status(404).json({ error: 'Quiz not found' });
         return;
       }
       
-      // If evaluation already exists, return it
-      if (session.evaluation) {
-        res.status(200).json({
-          message: 'Evaluation already exists for this quiz',
-          evaluation: session.evaluation
+      const quiz = session.quiz;
+      let score = 0;
+      let correctAnswers = 0;
+      const processedAnswers: QuizResult['answers'] = [];
+
+      quiz.questions.forEach((question: Question) => {
+        const userAnswer = answers[question.id];
+        let isCorrect = false;
+        if (userAnswer !== undefined) {
+          if (question.type === 'multiple-choice') {
+            const mcq = question as MultipleChoiceQuestion;
+            const correctOption = mcq.choices?.find(o => o.isCorrect);
+            if (correctOption && correctOption.id === userAnswer) {
+              isCorrect = true;
+            }
+          } else if (question.type === 'coding') {
+            const cq = question as CodingQuestion;
+            // Simple string comparison for coding answers for now
+            if (typeof userAnswer === 'string' && userAnswer.trim() === cq.solution) {
+              isCorrect = true;
+            }
+          }
+        }
+
+        if (isCorrect) {
+          score += 10;
+          correctAnswers++;
+        }
+        processedAnswers.push({
+          questionId: question.id,
+          userAnswer: userAnswer,
+          correct: isCorrect,
         });
-        return;
-      }
+      });
+
+      const coinsEarned = score;
+      const xpEarned = score;
       
-      // Generate evaluation (simplified for now, could be enhanced with AI)
+      // Save quiz result
+      const quizResult: QuizResult = {
+        userId,
+        quizId,
+        answers: processedAnswers,
+        score,
+        topic: session.topic,
+        difficulty: quiz.metadata.difficulty,
+        completedAt: new Date(),
+      };
+
+      // Store the quiz result for the user
+      await this.userService.saveQuizResult(quizResult);
+
+      // Update user's total score
+      await this.userService.updateUserScore(userId, score);
+
+      const updatedUser = await this.userService.getUserById(userId);
+
+      // Get suggested topics
+      const analysis = await this.contextAnalyzer.analyze(session.topic);
+      const suggestedTopics = analysis.suggestedTopics || [];
+
+      // Create evaluation object
       const evaluation: QuizEvaluation = {
         quizId,
-        score: 0.85, // Placeholder score
+        score,
         feedback: {
-          coverage: 0.8,
-          difficulty: 0.7,
-          uniqueness: 0.9,
-          clarity: 0.85,
-          practicality: 0.9,
-          quality: 0.85
+          coverage: 0,
+          difficulty: 0,
+          uniqueness: 0,
+          clarity: 0,
+          practicality: 0,
+          quality: 0,
         },
         issues: [],
-        suggestions: [
-          'Consider adding more examples',
-          'Increase difficulty of advanced questions'
-        ],
+        suggestions: suggestedTopics,
         timestamp: new Date()
       };
       
-      // Save evaluation
+      // Save evaluation in session
       await this.quizService.updateSession(quizId, { evaluation });
       
       res.status(200).json({
         message: 'Quiz evaluation completed',
-        evaluation
+        score,
+        correctAnswers,
+        totalQuestions: quiz.questions.length,
+        coinsEarned,
+        xpEarned,
+        suggestedTopics,
+        newTotalScore: updatedUser?.score ?? updatedUser?.score,
       });
     } catch (error) {
       console.error('Error evaluating quiz:', error);
       res.status(500).json({ error: 'Failed to evaluate quiz' });
+    }
+  };
+
+  submitResult = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { quizId, userId, answers } = req.body;
+
+      if (!quizId || !userId || !answers) {
+        res.status(400).json({ error: 'Quiz ID, User ID, and answers are required' });
+        return;
+      }
+
+      const session = await this.quizService.getSession(quizId);
+      if (!session || !session.quiz) {
+        res.status(404).json({ error: 'Quiz not found' });
+        return;
+      }
+
+      const quiz = session.quiz;
+      let score = 0;
+      const processedAnswers: QuizResult['answers'] = [];
+
+      quiz.questions.forEach((question: Question) => {
+        const userAnswerData = answers.find((a: any) => a.questionId === question.id);
+        const userAnswer = userAnswerData?.userAnswer;
+        let isCorrect = false;
+
+        if (userAnswer !== undefined) {
+          if (question.type === 'multiple-choice') {
+            const mcq = question as MultipleChoiceQuestion;
+            const correctOption = mcq.choices.find(o => o.isCorrect);
+            if (correctOption && correctOption.id === userAnswer) {
+              isCorrect = true;
+            }
+          } else if (question.type === 'coding') {
+            const cq = question as CodingQuestion;
+            if (typeof userAnswer === 'string' && userAnswer.trim() === cq.solution) {
+              isCorrect = true;
+            }
+          }
+        }
+
+        if (isCorrect) {
+          score += 10;
+        }
+        
+        processedAnswers.push({
+          questionId: question.id,
+          userAnswer: userAnswer,
+          correct: isCorrect,
+        });
+      });
+
+      // Save quiz result with server-calculated score
+      const quizResult: QuizResult = {
+        userId,
+        quizId,
+        answers: processedAnswers,
+        score,
+        topic: session.topic,
+        difficulty: quiz.metadata.difficulty,
+        completedAt: new Date(),
+      };
+
+      // Store the quiz result for the user
+      await this.userService.saveQuizResult(quizResult);
+
+      // Update user's total score
+      await this.userService.updateUserScore(userId, score);
+
+      const updatedUser = await this.userService.getUserById(userId);
+
+      // // Analyze the user's performance for weak areas
+      // const analysis = await this.contextAnalyzer.analyze(session.topic, session.quiz, answers);
+  
+      // // Suggest topics based on weak areas
+      // const suggestedTopics = analysis.keyConcepts.map(concept => concept.name);
+      const suggestedTopics = ["React Hooks", "State Management", "React Router"]; // Placeholder
+  
+      res.status(200).json({
+        message: "Quiz submitted successfully",
+        score,
+        correctAnswers: processedAnswers.filter(a => a.correct).length,
+        totalQuestions: quiz.questions.length,
+        coinsEarned: score,
+        xpEarned: score,
+        suggestedTopics,
+        newTotalScore: updatedUser?.score ?? (updatedUser?.score ?? 0) + score,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error('Error submitting quiz result:', error.message);
+      } else {
+        console.error('Error submitting quiz result:', error);
+      }
+      res.status(500).json({ error: 'Failed to submit quiz result' });
     }
   };
 
