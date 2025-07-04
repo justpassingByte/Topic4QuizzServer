@@ -223,6 +223,30 @@ export class QuizController {
     }
   };
 
+  // Get a single quiz by ID
+  getQuizById = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        res.status(400).json({ error: 'Quiz ID is required' });
+        return;
+      }
+
+      const session = await this.quizService.getSession(id);
+
+      if (!session) {
+        res.status(404).json({ error: 'Quiz not found' });
+        return;
+      }
+
+      res.status(200).json(session);
+    } catch (error) {
+      console.error('Error retrieving quiz by ID:', error);
+      res.status(500).json({ error: 'Failed to retrieve quiz' });
+    }
+  };
+
   // Evaluate a quiz
   evaluateQuiz = async (req: Request, res: Response): Promise<void> => {
     try {
