@@ -1,24 +1,40 @@
-const fetch = require('node-fetch');
+require('dotenv').config();
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-async function testHuggingFaceAccess() {
-  const apiKey = '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';
-  
+async function testGoogleGeminiApi() {
+  console.log('--- Starting Google Gemini API Test ---');
+
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    console.error('❌ Error: Could not find GOOGLE_API_KEY in your .env file.');
+    console.log('--- Test Finished ---');
+    return;
+  }
+
+  console.log('Found GOOGLE_API_KEY. Initializing client...');
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+  const prompt = "Who are you?";
+
+  console.log(`Sending prompt to gemini-1.5-flash-latest: "${prompt}"`);
+
   try {
-    const response = await fetch('https://huggingface.co/api/models/mistralai/Mixtral-8x7B-Instruct-v0.1', {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    console.log('Access successful:', data);
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const text = response.text();
+
+    console.log('✅ API Call Successful!');
+    console.log('Response:', text);
   } catch (error) {
-    console.error('Error:', error.message);
+    console.error('❌ API Call Failed!');
+    if (error instanceof Error) {
+        console.error('Error Details:', error.message);
+    } else {
+        console.error('Unknown error:', error);
+    }
+  } finally {
+    console.log('--- Test Finished ---');
   }
 }
 
-testHuggingFaceAccess(); 
+testGoogleGeminiApi(); 

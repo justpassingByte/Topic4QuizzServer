@@ -139,6 +139,14 @@ export class ApiKeyService {
     this.currentKeyIndex = (this.currentKeyIndex + 1) % this.apiKeys.length;
   }
 
+  public invalidateCurrentKeyAndGetNext(): string {
+    console.log(`Key ${this.apiKeys[this.currentKeyIndex].substring(0, 7)}... is invalid. Rotating.`);
+    // This simple rotation assumes the next key will be valid.
+    // A more robust implementation might mark keys as invalid.
+    this.rotateKey();
+    return this.getCurrentKey();
+  }
+
   // Helper method for external use
   public getHuggingFaceClient() {
     const key = this.getCurrentKey();

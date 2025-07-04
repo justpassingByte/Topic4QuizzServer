@@ -253,4 +253,16 @@ Do not include any text outside the JSON. Ensure the JSON is properly formatted 
     return cleanedContent.trim();
   }
 
+}
+
+function cleanAndParseJson(jsonString: string): any {
+  // Remove markdown code block fences and trim whitespace
+  const cleanedString = jsonString.replace(/^```json\s*/, '').replace(/```$/, '').trim();
+  try {
+    return JSON.parse(cleanedString);
+  } catch (error) {
+    console.error("Parse error after cleaning:", error);
+    // You might want to add more robust error handling or logging here
+    throw new Error(`Failed to parse JSON. Content preview: ${cleanedString.substring(0, 100)}`);
+  }
 } 

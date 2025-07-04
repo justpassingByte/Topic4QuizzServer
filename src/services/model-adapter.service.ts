@@ -1,3 +1,4 @@
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { ApiKeyService } from './api-key.service';
 import { config } from 'dotenv';
@@ -10,7 +11,8 @@ config();
 
 export enum ModelProvider {
   HUGGINGFACE = 'HUGGINGFACE',
-  SERPER = 'SERPER'
+  SERPER = 'SERPER',
+  GOOGLE = 'GOOGLE'
 }
 
 // Model families for specific handling
@@ -81,8 +83,7 @@ export class ModelAdapterService {
   private apiKeyService: ApiKeyService;
   private readonly MAX_RETRIES = 3;
   private readonly DEFAULT_WAIT_MS = 20000;
-  private readonly MODEL_FALLBACK_ORDER = ['LLAMA_32', 'MIXTRAL', 'MISTRAL', 'QWEN_OMNI'] as const;
-  private currentModelIndex = 0;
+  private readonly MODEL_FALLBACK_ORDER = ['QWEN_OMNI', 'LLAMA_32', 'MIXTRAL', 'MISTRAL'] as const;
   
   constructor() {
     this.apiKeyService = new ApiKeyService();
@@ -99,61 +100,87 @@ export class ModelAdapterService {
     return ModelFamily.OTHER;
   }
   
-  private getNextModel(): string | null {
-    this.currentModelIndex++;
-    if (this.currentModelIndex >= this.MODEL_FALLBACK_ORDER.length) {
-      return null;
-    }
-    const nextModelKey = this.MODEL_FALLBACK_ORDER[this.currentModelIndex];
-    return AVAILABLE_QUIZ_MODELS[nextModelKey].model;
-  }
-  
   async generateText(options: ModelRequestOptions): Promise<ModelResponse> {
-    const {
-      provider = ModelProvider.HUGGINGFACE,
-      retryCount = 0,
-      waitBetweenRetries = this.DEFAULT_WAIT_MS
-    } = options;
+    const { provider = ModelProvider.HUGGINGFACE } = options;
+
+    // Route to the correct provider
+    switch (provider) {
+      case ModelProvider.GOOGLE:
+        return this.callGoogleGemini(options);
+      case ModelProvider.HUGGINGFACE:
+        return this.callHuggingFaceWithFallback(options);
+      case ModelProvider.SERPER:
+        return this.callSerper(options);
+      default:
+        throw new Error(`Provider ${provider} not supported`);
+    }
+  }
+
+  private async callGoogleGemini(options: ModelRequestOptions): Promise<ModelResponse> {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      throw new Error('Missing GOOGLE_API_KEY in .env file');
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: options.model || 'gemini-pro' });
+
+    console.log(`Calling Google Gemini API for model: ${options.model || 'gemini-pro'}`);
 
     try {
-      switch (provider) {
-        case ModelProvider.HUGGINGFACE:
-          return await this.callHuggingface(options);
-        case ModelProvider.SERPER:
-          return await this.callSerper(options);
-        default:
-          throw new Error(`Provider ${provider} not supported`);
-      }
-    } catch (error: any) {
-      console.log(`Error calling model ${options.model}: ${error.message}`);
+      const result = await model.generateContent(options.prompt);
+      const response = result.response;
+      const content = response.text();
       
-      if (retryCount < this.MAX_RETRIES) {
-        console.log(`Attempt ${retryCount + 1} failed, retrying in ${waitBetweenRetries}ms...`);
-        await new Promise(resolve => setTimeout(resolve, waitBetweenRetries));
-        return this.generateText({
-          ...options,
-          retryCount: retryCount + 1,
-          waitBetweenRetries: waitBetweenRetries * 1.5
-        });
-      }
+      return {
+        content,
+        provider: ModelProvider.GOOGLE,
+        model: options.model || 'gemini-pro'
+      };
+    } catch (error) {
+      console.error('Error calling Google Gemini API:', error);
+      throw new Error('Failed to get response from Google Gemini API');
+    }
+  }
+  
+  private async callHuggingFaceWithFallback(options: ModelRequestOptions): Promise<ModelResponse> {
+    const initialModelName = options.model;
+    const fallbackOrderKeys = this.MODEL_FALLBACK_ORDER;
 
-      // If we've exhausted retries with current model, try next model
-      if (provider === ModelProvider.HUGGINGFACE) {
-        const nextModel = this.getNextModel();
-        if (nextModel) {
-          console.log(`Switching to fallback model: ${nextModel}`);
-          this.currentModelIndex = 0; // Reset retry count for new model
-          return this.generateText({
-            ...options,
-            model: nextModel,
-            retryCount: 0,
-            waitBetweenRetries: this.DEFAULT_WAIT_MS
-          });
+    // Create a unique, ordered list of models to try, starting with the requested one.
+    const modelsToTry: (keyof typeof AVAILABLE_QUIZ_MODELS)[] = [...new Set([
+      ...Object.entries(AVAILABLE_QUIZ_MODELS)
+        .filter(([, config]) => config.model === initialModelName)
+        .map(([key]) => key as keyof typeof AVAILABLE_QUIZ_MODELS),
+      ...fallbackOrderKeys
+    ])];
+
+    for (const modelKey of modelsToTry) {
+      const modelConfig = AVAILABLE_QUIZ_MODELS[modelKey];
+      if (!modelConfig) continue;
+
+      options.model = modelConfig.model;
+      
+      for (let attempt = 0; attempt < this.MAX_RETRIES; attempt++) {
+        try {
+          console.log(`Attempt ${attempt + 1}/${this.MAX_RETRIES} calling model: ${options.model}`);
+          const result = await this.callHuggingface(options);
+          console.log(`Successfully called model: ${options.model}`);
+          return result; // Success
+        } catch (error: any) {
+          console.log(`Error calling ${options.model} on attempt ${attempt + 1}: ${error.message}`);
+          if (attempt === this.MAX_RETRIES - 1) {
+            console.log(`All retries failed for ${options.model}. Trying next model.`);
+          } else {
+            const waitTime = this.DEFAULT_WAIT_MS * Math.pow(1.5, attempt);
+            console.log(`Retrying in ${waitTime}ms...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+        }
         }
       }
       
-      throw new Error(`All models failed after retries. Last error: ${error.message}`);
-    }
+    throw new Error('All models in the fallback list failed.');
   }
   
   private async callHuggingface(options: ModelRequestOptions): Promise<ModelResponse> {
@@ -162,15 +189,22 @@ export class ModelAdapterService {
     
     try {
       const requestBody = this.buildHuggingFaceRequest(options, modelFamily);
-      console.log('Request body:', JSON.stringify(requestBody, null, 2));
       
       const headers = {
         'Authorization': `Bearer ${this.apiKeyService.getCurrentKey()}`,
         'Content-Type': 'application/json'
       };
 
+      const url = `https://api-inference.huggingface.co/models/${options.model}`;
+
+      console.log('--- FINAL REQUEST DETAILS ---');
+      console.log('URL:', url);
+      console.log('METHOD: POST');
+      console.log('HEADERS:', JSON.stringify(headers, null, 2));
+      console.log('--- END REQUEST DETAILS ---');
+
       const response = await axios.post(
-        `https://api-inference.huggingface.co/models/${options.model}`,
+        url,
         requestBody,
         { headers }
       );
@@ -183,21 +217,26 @@ export class ModelAdapterService {
       content = this.cleanupModelResponse(content, options);
       // console.log('Cleaned response:', content);
 
-      // Reset model index on successful call
-      this.currentModelIndex = 0;
-
       return {
         content,
         provider: ModelProvider.HUGGINGFACE,
         model: options.model || 'unknown'
       };
     } catch (error) {
-      if (axios.isAxiosError(error)) {
+      if (axios.isAxiosError(error) && error.response) {
         console.error('Hugging Face API error details:', {
           status: error.response?.status,
           data: error.response?.data,
           message: error.message
         });
+        
+        // If we get a 401, the key is bad. Invalidate it and retry the SAME request.
+        if (error.response.status === 401) {
+            this.apiKeyService.invalidateCurrentKeyAndGetNext();
+            console.log('Retrying request with new key...');
+            return this.callHuggingface(options); // Retry with the new key
+        }
+
         if (error.response?.status === 503) {
           console.log('Model is loading, waiting and retrying...');
           throw new Error('MODEL_LOADING');

@@ -35,6 +35,15 @@ export interface ModelConfig {
   stopSequences?: string[];
 }
 
+export const AVAILABLE_GOOGLE_MODELS = {
+  GEMINI_PRO: {
+    provider: ModelProvider.GOOGLE,
+    model: 'gemini-1.5-flash-latest',
+    maxTokens: 3000,
+    temperature: 0.7
+  }
+};
+
 // Add available models configuration
 export const AVAILABLE_QUIZ_MODELS = {
   LLAMA_32: {
@@ -72,17 +81,20 @@ export class ModelConfigService {
   }
 
   private initializeConfigs(): void {
-    // Context Analyzer - Dùng Mixtral vì tốt hơn trong việc phân tích ngữ cảnh
+    // Default to Google Gemini Pro for all generative tasks
+    const geminiConfig = AVAILABLE_GOOGLE_MODELS.GEMINI_PRO;
+
+    // Context Analyzer
     this.modelConfigs.set(
       AgentType.CONTEXT_ANALYZER, 
       {
-        ...AVAILABLE_QUIZ_MODELS.MIXTRAL,
+        ...geminiConfig,
         temperature: 0.3,
         maxTokens: 1500
       }
     );
     
-    // Research Agent - Sử dụng Serper cho tìm kiếm
+    // Research Agent - Keep using Serper for search
     this.modelConfigs.set(
       AgentType.RESEARCH_AGENT,
       {
@@ -92,40 +104,39 @@ export class ModelConfigService {
       }
     );
     
-    // Search Analysis Agent - Use Mixtral for analyzing search results
+    // Search Analysis Agent
     this.modelConfigs.set(
       AgentType.SEARCH_ANALYSIS_AGENT,
       {
-        ...AVAILABLE_QUIZ_MODELS.MIXTRAL,
+        ...geminiConfig,
         temperature: 0.3, // Lower temperature for more focused analysis
         maxTokens: 2048
       }
     );
     
-    // Prompt Builder - Dùng Llama 3.2 3B Instruct để tạo prompt
+    // Prompt Builder - Use Gemini
     this.modelConfigs.set(
       AgentType.PROMPT_BUILDER,
       {
-        provider: ModelProvider.HUGGINGFACE,
-        model: process.env.PROMPT_BUILDER_MODEL || 'meta-llama/Llama-3.2-3B-Instruct'
+        ...geminiConfig
       }
     );
     
-    // Quiz Generator - Use Mixtral for better JSON generation
+    // Quiz Generator - Use Gemini
     this.modelConfigs.set(
       AgentType.QUIZ_GENERATOR,
       {
-        ...AVAILABLE_QUIZ_MODELS.MIXTRAL,
+        ...geminiConfig,
         temperature: 0.5, // Lower temperature for better JSON structure
         maxTokens: 3000
       }
     );
     
-    // Quiz Evaluator - Dùng Mixtral để đánh giá chất lượng
+    // Quiz Evaluator - Use Gemini
     this.modelConfigs.set(
       AgentType.QUIZ_EVALUATOR,
       {
-        ...AVAILABLE_QUIZ_MODELS.MIXTRAL,
+        ...geminiConfig,
         temperature: 0.3 // Lower temperature for more consistent evaluation
       }
     );

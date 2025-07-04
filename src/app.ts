@@ -1,14 +1,13 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import dotenv from 'dotenv';
 import quizRoutes from './api/routes/quiz.routes';
 import userRoutes from './api/routes/user.routes';
 import authRoutes from './api/routes/auth.routes';
-
-// Load environment variables
-dotenv.config();
 
 const app = express();
 // const PORT = process.env.PORT || 3000;
