@@ -20,7 +20,7 @@ export interface QuizGeneratorTemplate {
 }
 
 export const QUIZ_GENERATOR_TEMPLATE: QuizGeneratorTemplate = {
-  base: `Create programming quiz questions for the given topic and subtopics. Each subtopic should have a proportional number of questions.`,
+  base: `Create multiple-choice quiz questions for the given main topic. Do NOT use subtopics. All questions must be directly about the main topic.`,
 
   questionTypes: {
     multipleChoice: {
@@ -28,14 +28,7 @@ export const QUIZ_GENERATOR_TEMPLATE: QuizGeneratorTemplate = {
       examples: [
         `Example: "Which React Hook is used for side effects?" Options: ["useState", "useEffect", "useContext", "useReducer"], Correct: 1, Explanation: "useEffect is for side effects."`
       ],
-      weight: 0.6
-    },
-    coding: {
-      structure: `Coding Question: Problem description, template if needed, solution approach, and hints.`,
-      examples: [
-        `Example: "Write a useState hook function." Solution: "function useCustomState(initialValue) {...}", Hints: ["Remember to return both state and setter", "Use closure to maintain state"]`
-      ],
-      weight: 0.4
+      weight: 1.0
     }
   },
 
@@ -66,7 +59,7 @@ export const QUIZ_GENERATOR_TEMPLATE: QuizGeneratorTemplate = {
     }
   },
 
-  subtopicInstructions: `IMPORTANT: Distribute questions evenly across subtopics. Tag each question with its subtopic. Ensure questions test understanding of that subtopic's concepts.`,
+  subtopicInstructions: '',
 
   feedbackInstructions: `Use the provided feedback to improve question quality. Adjust question complexity, clarity, or content based on feedback.`,
 
@@ -81,17 +74,7 @@ export const QUIZ_GENERATOR_TEMPLATE: QuizGeneratorTemplate = {
       "correctAnswer": 0,
       "difficulty": "basic",
       "explanation": "Why A is correct",
-      "subtopic": "Specific subtopic name",
       "hints": []
-    },
-    {
-      "type": "coding",
-      "question": "Coding problem",
-      "correctAnswer": "function solution() {}",
-      "difficulty": "intermediate",
-      "explanation": "Solution approach",
-      "hints": ["Hint 1", "Hint 2"],
-      "subtopic": "Specific subtopic name"
     }
   ]
 }`
@@ -100,20 +83,15 @@ export const QUIZ_GENERATOR_TEMPLATE: QuizGeneratorTemplate = {
 export function buildDynamicQuizPrompt(
   template: QuizGeneratorTemplate,
   config: {
-    topic: string;
+    topicSlug: string;
     questionCount?: number;
     difficultyDistribution?: {
       basic?: number;
       intermediate?: number;
       advanced?: number;
     };
-    typeDistribution?: {
-      multipleChoice?: number;
-      coding?: number;
-    };
     focusAreas?: string[];
     includeHints?: boolean;
-    subtopics?: string[];
     feedback?: {
       strengths?: string[];
       weaknesses?: string[];
@@ -122,39 +100,28 @@ export function buildDynamicQuizPrompt(
   }
 ): string {
   const {
-    topic,
+    topicSlug,
     questionCount = 10,
     difficultyDistribution = {
       basic: 0.4,
       intermediate: 0.4,
       advanced: 0.2
     },
-    typeDistribution = {
-      multipleChoice: 0.6,
-      coding: 0.4
-    },
     focusAreas = [],
     includeHints = true,
-    subtopics = [],
     feedback
   } = config;
 
   let prompt = template.base;
 
-  // Add topic and question count
-  prompt += `\n\nTopic: ${topic}\nRequired Questions: ${questionCount}`;
-
-  // Add subtopics if available
-  if (subtopics.length > 0) {
-    prompt += `\n\nSUBTOPICS:\n${subtopics.map((subtopic, index) => `${index + 1}. ${subtopic}`).join('\n')}`;
-    prompt += `\n\n${template.subtopicInstructions}`;
-  }
+  // Add topic slug and question count
+  prompt += `\n\nMain Topic: ${topicSlug}\nNumber of Questions: ${questionCount}`;
 
   // Add difficulty distribution
-  prompt += `\n\nDifficulty: basic ${Math.round((difficultyDistribution.basic || 0.4) * 100)}%, intermediate ${Math.round((difficultyDistribution.intermediate || 0.4) * 100)}%, advanced ${Math.round((difficultyDistribution.advanced || 0.2) * 100)}%`;
+  prompt += `\n\nDifficulty Distribution: basic ${Math.round((difficultyDistribution.basic || 0.4) * 100)}%, intermediate ${Math.round((difficultyDistribution.intermediate || 0.4) * 100)}%, advanced ${Math.round((difficultyDistribution.advanced || 0.2) * 100)}%`;
 
-  // Add question type distribution
-  prompt += `\n\nTypes: multiple-choice ${Math.round((typeDistribution.multipleChoice || 0.6) * 100)}%, coding ${Math.round((typeDistribution.coding || 0.4) * 100)}%`;
+  // Chỉ còn multiple-choice
+  prompt += `\n\nQuestion Type: multiple-choice 100% (Question with 4 options, one correct answer)`;
 
   // Add focus areas if specified
   if (focusAreas.length > 0) {
@@ -163,7 +130,7 @@ export function buildDynamicQuizPrompt(
 
   // Include hint instruction if enabled
   if (includeHints) {
-    prompt += `\n\nALWAYS include hints for coding questions, and optionally for multiple-choice questions.`;
+    prompt += `\n\nALWAYS include hints for multiple-choice questions if possible.`;
   }
 
   // Add feedback if available
@@ -190,5 +157,5 @@ export function buildDynamicQuizPrompt(
 }
 
 export const QUIZ_GENERATOR_PROMPT = buildDynamicQuizPrompt(QUIZ_GENERATOR_TEMPLATE, {
-  topic: "Programming Fundamentals"
+  topicSlug: "Programming Fundamentals"
 }); 

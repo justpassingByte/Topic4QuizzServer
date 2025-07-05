@@ -2,6 +2,7 @@ import { ApiKeyService } from '../services/api-key.service';
 import { ModelConfigService, AgentType } from '../services/model-config.service';
 import { ModelAdapterService, ModelProvider } from '../services/model-adapter.service';
 import { CONTEXT_ANALYZER_PROMPT } from './prompts/context-analyzer.prompt';
+import { parseJSON } from '../utils/json-parser.util';
 
 export interface ContextAnalysisData {
   keyConcepts: Array<{
@@ -11,6 +12,7 @@ export interface ContextAnalysisData {
     prerequisites?: string[];
   }>;
   suggestedTopics?: string[];
+  similarTopics?: string[];
   difficulty: 'basic' | 'intermediate' | 'advanced';
   estimatedTime?: number;  // in minutes
   keyAreas?: string[];     // Added for backward compatibility
@@ -30,130 +32,125 @@ export class ContextAnalyzer {
     this.apiKeyService = new ApiKeyService();
   }
 
-  async analyze(topic: string): Promise<ContextAnalysisData> {
-    // console.log(`ANALYZER: Starting analysis for topic "${topic}"...`);
-    return this.analyzeContext(topic, topic);
+  async analyze(topic: string, slugList: string[]): Promise<{ topicSlug: string; similarTopics: string[] }> {
+    return this.analyzeContext(topic, topic, slugList);
   }
 
   async analyzeContext(
     content: string,
-    topic: string
-  ): Promise<ContextAnalysisData> {
-    // console.log('=== ANALYZING CONTEXT ===');
-    
+    topic: string,
+    slugList: string[]
+  ): Promise<{ topicSlug: string; similarTopics: string[] }> {
     try {
-      const prompt = `${CONTEXT_ANALYZER_PROMPT}
-      
-Context: 
-${content}
-
-Topic: ${topic}
-
-Return a VALID JSON object with this exact structure:
-{
-  "keyConcepts": [
-    {
-      "name": string,
-      "description": string,
-      "relationships": string[],
-      "prerequisites": string[]
-    }
-  ],
-  "suggestedTopics": string[],
-  "difficulty": "basic" | "intermediate" | "advanced",
-  "estimatedTime": number,
-  "keyAreas": string[]
-}
-
-Do not include any text outside the JSON. Ensure the JSON is properly formatted with all required fields.`;
-
+      const prompt = `${CONTEXT_ANALYZER_PROMPT}\n\nInput:\n- userInput: ${topic}\n- slugs: [${slugList.join(', ')}]\n\nOutput:`;
       const modelConfig = this.modelConfigService.getModelConfigForAgent(AgentType.CONTEXT_ANALYZER);
-      
-      // Generate the analysis
       const response = await this.modelAdapter.generateText({
         ...modelConfig,
         prompt,
-        maxTokens: 1000,
+        maxTokens: 400,
         temperature: 0.3
       });
-
-      // Extract JSON from Hugging Face response
       let jsonContent = '';
       try {
         const huggingFaceResponse = JSON.parse(response.content);
         if (Array.isArray(huggingFaceResponse) && huggingFaceResponse[0]?.generated_text) {
           const text = huggingFaceResponse[0].generated_text;
-          // Extract JSON from markdown code block
           const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
           if (match) {
             jsonContent = match[1].trim();
+          } else {
+            jsonContent = text.trim();
           }
+        } else {
+          jsonContent = response.content;
         }
       } catch (e) {
-        // If not a Hugging Face response, use raw content
         jsonContent = response.content;
       }
-      // Fix malformed JSON
-      if (!jsonContent.includes('"keyConcepts"')) {
-        // Check if content is just an array of concepts
-        if (jsonContent.trim().startsWith('{') && jsonContent.includes('"name"')) {
-          // Convert to proper format
-          jsonContent = `{
-            "keyConcepts": [${jsonContent}],
-            "suggestedTopics": [],
-            "difficulty": "intermediate",
-            "estimatedTime": 30,
-            "keyAreas": []
-          }`;
-        }
-      }
-
       // Clean up any formatting issues
+      if (jsonContent.trim().startsWith('```')) {
+        jsonContent = jsonContent.replace(/^```json|^```|```$/g, '').trim();
+      }
       jsonContent = jsonContent
-        .replace(/},\s*}/g, '}}')  // Fix extra comma before closing brace
-        .replace(/},\s*(?=})/g, '}')  // Fix trailing comma in objects
-        .replace(/\}\s*,\s*(?!\s*[\{\[])/g, '}'); // Fix invalid commas between objects
-
-      // console.log('=== CLEANED JSON CONTENT ===');
-      // console.log(jsonContent);
-
+        .replace(/},\s*}/g, '}}')
+        .replace(/},\s*(?=})/g, '}')
+        .replace(/\}\s*,\s*(?!\s*[\{\[])/g, '}');
       try {
-        // Parse the JSON content
-        const analysisData = JSON.parse(jsonContent) as ContextAnalysisData;
-        
-        // Log parsed data
-        // console.log('=== PARSED CONTEXT ANALYSIS ===');
-        if (analysisData && analysisData.keyConcepts) {
-          // console.log('Key Concepts found:', analysisData.keyConcepts.length);
-          // console.log('Analysis Data:', JSON.stringify(analysisData, null, 2));
-          return this.ensureValidAnalysis(analysisData, topic);
+        const result = parseJSON(jsonContent);
+        if (result && typeof result === 'object' && 'topicSlug' in result && 'similarTopics' in result) {
+          let topicSlug = result.topicSlug;
+          let similarTopics = Array.isArray(result.similarTopics) ? result.similarTopics : [];
+          // Nếu topicSlug là object (không phải string), lấy topicSlug từ object đó
+          while (typeof topicSlug === 'object' && topicSlug !== null) {
+            if ('topicSlug' in topicSlug) {
+              topicSlug = topicSlug.topicSlug;
+            } else {
+              topicSlug = topic;
+              break;
+            }
+          }
+          // Parse lồng nhiều lớp nếu topicSlug là string chứa code block hoặc JSON
+          while (typeof topicSlug === 'string' && (topicSlug.trim().startsWith('```') || topicSlug.trim().startsWith('{'))) {
+            let cleaned = topicSlug.trim();
+            if (cleaned.startsWith('```')) {
+              cleaned = cleaned.replace(/^```json|^```|```$/g, '').trim();
+            }
+            try {
+              const inner = JSON.parse(cleaned);
+              if (typeof inner.topicSlug === 'string') {
+                topicSlug = inner.topicSlug;
+              }
+              if (Array.isArray(inner.similarTopics)) {
+                similarTopics = inner.similarTopics;
+              }
+              if (!(typeof topicSlug === 'string' && (topicSlug.trim().startsWith('```') || topicSlug.trim().startsWith('{')))) {
+                break;
+              }
+            } catch {
+              break;
+            }
+          }
+          // Sau khi đã parse lồng nhiều lớp, nếu topicSlug vẫn là string chứa JSON, parse tiếp một lần cuối cùng
+          if (typeof topicSlug === 'string' && topicSlug.trim().startsWith('{')) {
+            try {
+              const inner = JSON.parse(topicSlug);
+              if (typeof inner.topicSlug === 'string') {
+                topicSlug = inner.topicSlug;
+              }
+              if (Array.isArray(inner.similarTopics)) {
+                similarTopics = inner.similarTopics;
+              }
+            } catch {}
+          }
+          if (!similarTopics || similarTopics.length === 0) {
+            similarTopics = slugList.filter(slug => slug !== topicSlug).slice(0, 5);
+          }
+          // Đảm bảo topicSlug luôn là string thực sự
+          const finalTopicSlug: string = extractSlug(topicSlug) || (typeof topic === 'string' ? topic : String(topic));
+          return {
+            topicSlug: finalTopicSlug,
+            similarTopics: Array.isArray(similarTopics) ? similarTopics : []
+          };
         }
+        // Nếu không đúng format, fallback
+        return {
+          topicSlug: topic,
+          similarTopics: slugList.filter(slug => slug !== topic).slice(0, 5)
+        };
       } catch (parseError) {
         console.error('Parse error:', parseError);
-        // Try to extract concepts array
-        try {
-          const conceptsMatch = jsonContent.match(/\[\s*(\{[\s\S]*\})\s*\]/);
-          if (conceptsMatch) {
-            const concepts = JSON.parse(`[${conceptsMatch[1]}]`);
-            const analysisData: ContextAnalysisData = {
-              keyConcepts: concepts,
-              suggestedTopics: [],
-              difficulty: 'intermediate',
-              estimatedTime: 30,
-              keyAreas: concepts.map((c: { name: string }) => c.name)
-            };
-            return this.ensureValidAnalysis(analysisData, topic);
-          }
-        } catch (e) {
-          console.error('Failed to extract concepts:', e);
-        }
       }
-      
-      console.log('No valid analysis data found, using fallback');
-      return this.createFallbackAnalysis(topic, '');
+      // Fallback: return topic as topicSlug, 3-5 slug khác
+      return {
+        topicSlug: topic,
+        similarTopics: slugList.filter(slug => slug !== topic).slice(0, 5)
+      };
     } catch (error) {
       console.error('Context analysis failed:', error);
-      return this.createFallbackAnalysis(topic, '');
+      return {
+        topicSlug: topic,
+        similarTopics: slugList.filter(slug => slug !== topic).slice(0, 5)
+      };
     }
   }
   
@@ -265,4 +262,28 @@ function cleanAndParseJson(jsonString: string): any {
     // You might want to add more robust error handling or logging here
     throw new Error(`Failed to parse JSON. Content preview: ${cleanedString.substring(0, 100)}`);
   }
+}
+
+// Thêm export để có thể sử dụng extractSlug ở nơi khác
+export function extractSlug(slug: any): string {
+  // Nếu là string, thử parse tiếp nếu là JSON
+  while (typeof slug === 'string') {
+    const trimmed = slug.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        slug = parsed;
+        continue;
+      } catch {
+        break;
+      }
+    }
+    break;
+  }
+  // Nếu là object, tiếp tục lấy topicSlug bên trong
+  while (typeof slug === 'object' && slug !== null && 'topicSlug' in slug) {
+    slug = slug.topicSlug;
+  }
+  // Đảm bảo trả về string cuối cùng
+  return typeof slug === 'string' ? slug : '';
 } 

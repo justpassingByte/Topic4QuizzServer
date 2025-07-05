@@ -3,11 +3,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { DatabaseService } from './database.service';
 import { User, QuizResult, UserStatistics, TopicRecommendation } from '../models/user.model';
 import { QuizSession } from '../models/quiz.model';
+import { Quiz } from '../models/quiz.model';
 
 export class UserService extends DatabaseService {
   private usersCollection!: Collection<User>;
   private quizResultsCollection!: Collection<QuizResult>;
   private quizCollection!: Collection<QuizSession>;
+  private quizzesCollection!: Collection<Quiz>;
 
   constructor() {
     super();
@@ -19,6 +21,7 @@ export class UserService extends DatabaseService {
     this.usersCollection = db.collection('users');
     this.quizResultsCollection = db.collection('quizResults');
     this.quizCollection = db.collection('sessions');
+    this.quizzesCollection = db.collection('quizzes');
     
     await this.createIndexes();
   }
@@ -54,7 +57,8 @@ export class UserService extends DatabaseService {
       userId: doc.userId,
       quizId: doc.quizId,
       score: doc.score,
-      topic: doc.topic,
+      topicSlug: doc.topicSlug,
+      topicName: doc.topicName,
       difficulty: doc.difficulty,
       completedAt: doc.completedAt,
       answers: doc.answers
@@ -80,16 +84,13 @@ export class UserService extends DatabaseService {
     const averageScore = totalScore / quizResults.length;
 
     // Calculate topic performance
-    const topicPerformance: Record<string, {
-      completed: number;
-      averageScore: number;
-      strengths: string[];
-      weaknesses: string[];
-    }> = {};
+    const topicPerformance: UserStatistics['topicPerformance'] = {};
 
     quizResults.forEach(result => {
-      if (!topicPerformance[result.topic]) {
-        topicPerformance[result.topic] = {
+      const slug = result.topicSlug;
+      if (!topicPerformance[slug]) {
+        topicPerformance[slug] = {
+          topic: result.topicName || slug,
           completed: 0,
           averageScore: 0,
           strengths: [],
@@ -97,7 +98,7 @@ export class UserService extends DatabaseService {
         };
       }
 
-      const topic = topicPerformance[result.topic];
+      const topic = topicPerformance[slug];
       topic.completed++;
       topic.averageScore = (topic.averageScore * (topic.completed - 1) + result.score) / topic.completed;
 
@@ -138,15 +139,16 @@ export class UserService extends DatabaseService {
     };
   }
 
-  async getUserTopicResults(userId: string, topic: string): Promise<QuizResult[]> {
+  async getUserTopicResults(userId: string, topicSlug: string): Promise<QuizResult[]> {
     const results = await this.withRetry(() => 
-      this.quizResultsCollection.find({ userId, topic }).sort({ completedAt: -1 }).toArray()
+      this.quizResultsCollection.find({ userId, topicSlug }).sort({ completedAt: -1 }).toArray()
     );
     return results.map(doc => ({
       userId: doc.userId,
       quizId: doc.quizId,
       score: doc.score,
-      topic: doc.topic,
+      topicSlug: doc.topicSlug,
+      topicName: doc.topicName,
       difficulty: doc.difficulty,
       completedAt: doc.completedAt,
       answers: doc.answers
@@ -224,20 +226,29 @@ export class UserService extends DatabaseService {
     );
   }
   
-  async getQuizzesByUserPreferences(userId: string): Promise<QuizSession[]> {
+  async getQuizzesByUserPreferences(userId: string): Promise<Quiz[]> {
     const user = await this.getUserById(userId);
     if (!user || !user.preferences.favoriteTopics.length) {
       return [];
     }
-    
-    return await this.withRetry(() => 
-      this.quizCollection.find({
-        $or: [
-          { topic: { $in: user.preferences.favoriteTopics } },
-          { "similarTopics": { $in: user.preferences.favoriteTopics } }
-        ]
-      }).toArray()
-    );
+    // Lấy danh sách quizId user đã làm
+    const doneResults = await this.quizResultsCollection.find({ userId }).toArray();
+    const doneQuizIds = doneResults.map(r => r.quizId);
+
+    const query = {
+      $and: [
+        {
+          $or: [
+            { topicSlug: { $in: user.preferences.favoriteTopics } },
+            { similarTopics: { $in: user.preferences.favoriteTopics } }
+          ]
+        },
+        { id: { $nin: doneQuizIds } } // loại bỏ quiz đã làm
+      ]
+    };
+    const result = await this.withRetry(() => this.quizzesCollection.find(query).toArray());
+    console.log('[getQuizzesByUserPreferences] Query quizzes:', JSON.stringify(query), 'Result count:', result.length);
+    return result;
   }
   
   async updateUserScore(userId: string, score: number): Promise<void> {
@@ -283,8 +294,10 @@ export class UserService extends DatabaseService {
     
     // Group by topic
     results.forEach(result => {
-      if (!topicPerformance[result.topic]) {
-        topicPerformance[result.topic] = {
+      const slug = result.topicSlug;
+      if (!topicPerformance[slug]) {
+        topicPerformance[slug] = {
+          topic: result.topicName || slug,
           completed: 0,
           averageScore: 0,
           strengths: [],
@@ -292,16 +305,16 @@ export class UserService extends DatabaseService {
         };
       }
       
-      topicPerformance[result.topic].completed += 1;
-      const topicScores = topicPerformance[result.topic];
-      const currentTotal = topicScores.averageScore * (topicPerformance[result.topic].completed - 1);
-      topicPerformance[result.topic].averageScore = 
-        (currentTotal + result.score) / topicPerformance[result.topic].completed;
+      topicPerformance[slug].completed += 1;
+      const topicScores = topicPerformance[slug];
+      const currentTotal = topicScores.averageScore * (topicPerformance[slug].completed - 1);
+      topicPerformance[slug].averageScore = 
+        (currentTotal + result.score) / topicPerformance[slug].completed;
     });
     
     // Determine strengths and weaknesses for each topic
-    Object.keys(topicPerformance).forEach(topic => {
-      const performance = topicPerformance[topic];
+    Object.keys(topicPerformance).forEach(slug => {
+      const performance = topicPerformance[slug];
       
       // Topics with scores > 80% are strengths
       if (performance.averageScore >= 0.8) {
@@ -348,9 +361,9 @@ export class UserService extends DatabaseService {
     };
   }
   
-  async getSimilarTopics(topic: string, limit: number = 5): Promise<string[]> {
+  async getSimilarTopics(topicSlug: string, limit: number = 5): Promise<string[]> {
     // Get sessions with this topic
-    const sessions = await this.getSessionsByTopic(topic);
+    const sessions = await this.getSessionsByTopic(topicSlug);
     if (!sessions || sessions.length === 0) {
       return [];
     }
@@ -360,10 +373,10 @@ export class UserService extends DatabaseService {
     
     sessions.forEach(session => {
       if (session.similarTopics && session.similarTopics.length > 0) {
-        session.similarTopics.forEach((similarTopic: string) => {
-          if (similarTopic !== topic) {
-            const current = similarTopicsMap.get(similarTopic) || 0;
-            similarTopicsMap.set(similarTopic, current + 1);
+        session.similarTopics.forEach((similarTopicSlug: string) => {
+          if (similarTopicSlug !== topicSlug) {
+            const current = similarTopicsMap.get(similarTopicSlug) || 0;
+            similarTopicsMap.set(similarTopicSlug, current + 1);
           }
         });
       }
@@ -376,16 +389,16 @@ export class UserService extends DatabaseService {
       .map(entry => entry[0]);
   }
   
-  private async getSessionsByTopic(topic: string): Promise<QuizSession[]> {
+  private async getSessionsByTopic(topicSlug: string): Promise<QuizSession[]> {
     try {
       await this.ensureConnection();
       // Uses regex to search case-insensitive
       const sessions = await this.quizCollection.find({ 
-        topic: { $regex: new RegExp(topic, 'i') } 
+        topicSlug: { $regex: new RegExp(topicSlug, 'i') } 
       }).toArray();
       return sessions;
     } catch (error) {
-      console.error(`Error getting sessions by topic ${topic}:`, error);
+      console.error(`Error getting sessions by topic ${topicSlug}:`, error);
       return [];
     }
   }
@@ -403,23 +416,23 @@ export class UserService extends DatabaseService {
     // Get similar topics for each user topic
     const recommendations = new Map<string, TopicRecommendation>();
     
-    for (const topic of userTopics) {
-      const similarTopics = await this.getSimilarTopics(topic, 3);
+    for (const topicSlug of userTopics) {
+      const similarTopics = await this.getSimilarTopics(topicSlug, 3);
       
-      for (const similarTopic of similarTopics) {
-        if (!userTopics.includes(similarTopic)) {
-          const existing = recommendations.get(similarTopic);
+      for (const similarTopicSlug of similarTopics) {
+        if (!userTopics.includes(similarTopicSlug)) {
+          const existing = recommendations.get(similarTopicSlug);
           
           if (existing) {
             existing.relevanceScore += 1;
-            if (!existing.basedOn.includes(topic)) {
-              existing.basedOn.push(topic);
+            if (!existing.basedOn.includes(topicSlug)) {
+              existing.basedOn.push(topicSlug);
             }
           } else {
-            recommendations.set(similarTopic, {
-              topic: similarTopic,
+            recommendations.set(similarTopicSlug, {
+              topic: similarTopicSlug,
               relevanceScore: 1,
-              basedOn: [topic],
+              basedOn: [topicSlug],
               difficulty: 'intermediate' // Default difficulty
             });
           }
@@ -434,10 +447,10 @@ export class UserService extends DatabaseService {
   }
   
   async getPopularTopics(limit: number = 5): Promise<TopicRecommendation[]> {
-    // Aggregation to find most common topics from sessions
+    // Get popular topics
     const topicCounts = await this.withRetry(() => 
       this.quizCollection.aggregate([
-        { $group: { _id: "$topic", count: { $sum: 1 } } },
+        { $group: { _id: "$topicSlug", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: limit }
       ]).toArray()

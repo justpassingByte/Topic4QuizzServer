@@ -29,7 +29,11 @@ export interface BaseQuestion {
 
 export interface MultipleChoiceQuestion extends BaseQuestion {
   type: 'multiple-choice';
-  choices: Choice[];
+  answers: {
+    id: string;
+    text: string;
+    correct: boolean;
+  }[];
 }
 
 export interface CodingQuestion extends BaseQuestion {
@@ -50,6 +54,8 @@ export interface QuizMetadata {
 
 export interface Quiz {
   id: string;
+  topicSlug?: string;
+  topicName?: string;
   prompt: string;
   questions: Array<MultipleChoiceQuestion | CodingQuestion>;
   createdAt: Date;
@@ -59,6 +65,8 @@ export interface Quiz {
     totalQuestions: number;
     generatedAt: string;
     estimatedTime: number;
+    topicSlug?: string;
+    topicName?: string;
   };
   updatedAt?: Date;
 }
@@ -66,7 +74,8 @@ export interface Quiz {
 export interface QuizSession {
   id: string;
   quiz: Quiz;
-  topic: string;
+  topicSlug: string;
+  topicName: string;
   createdAt: Date;
   updatedAt?: Date;
   similarTopics?: string[];
@@ -95,6 +104,11 @@ export interface ResearchData {
     coverageScore: number;
     generatedFallback?: boolean;
   };
+  isCompleted: boolean;
+  priority: 'low' | 'medium' | 'high';
+  createdAt: Date;
+  updatedAt?: Date;
+  completedAt?: Date;
 }
 
 export interface QuizGenerationConfig {
@@ -230,7 +244,8 @@ export interface QuizGenerationMetadata {
 }
 
 export interface SubtopicAnalysis {
-  topic: string;
+  topicSlug: string;
+  topicName: string;
   difficulty?: 'basic' | 'intermediate' | 'advanced';
   searchAnalysis: {
     mainSummary?: string;

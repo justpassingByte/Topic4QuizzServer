@@ -3,7 +3,7 @@ import * as bcrypt from 'bcryptjs';
 import { User, QuizResult, UserStatistics } from '../../models/user.model';
 import { v4 as uuidv4 } from 'uuid';
 import { UserService } from '../../services/user.service';
-import { QuizSession } from '../../models/quiz.model';
+import { Quiz, QuizSession } from '../../models/quiz.model';
 
 export class UserController {
   private userService: UserService;
@@ -153,12 +153,13 @@ export class UserController {
       
       res.status(200).json({
         count: quizzes.length,
-        quizzes: quizzes.map((session: QuizSession) => ({
-          id: session.id,
-          topic: session.topic,
-          questionCount: session.quiz?.questions?.length || 0,
-          createdAt: session.createdAt,
-          updatedAt: session.updatedAt
+        quizzes: quizzes.map((quiz: Quiz) => ({
+          id: quiz.id,
+          topicSlug: quiz.topicSlug,
+          topicName: quiz.topicName,
+          questionCount: quiz.questions?.length || 0,
+          createdAt: quiz.createdAt,
+          updatedAt: quiz.updatedAt
         }))
       });
     } catch (error) {
@@ -170,9 +171,9 @@ export class UserController {
   // Save quiz result
   saveQuizResult = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { userId, quizId, topic, score, answers, difficulty } = req.body;
+      const { userId, quizId, topicSlug, topicName, score, answers, difficulty } = req.body;
       
-      if (!userId || !quizId || !topic || score === undefined || !answers) {
+      if (!userId || !quizId || !topicSlug || !topicName || score === undefined || !answers) {
         res.status(400).json({ error: 'Missing required fields' });
         return;
       }
@@ -186,7 +187,8 @@ export class UserController {
       const result: QuizResult = {
         userId,
         quizId,
-        topic,
+        topicSlug,
+        topicName,
         score,
         difficulty: difficulty || 'intermediate',
         completedAt: new Date(),

@@ -156,15 +156,20 @@ export class QuizService extends DatabaseService {
     ) as { topic: string; quizCount: number; lastQuizDate: Date; }[];
   }
 
-  async createSession(topic: string, quiz: Quiz, similarTopics: string[] = []): Promise<QuizSession> {
+  async createSession(topicSlug: string, topicName: string, quiz: Quiz, similarTopics: string[] = []): Promise<QuizSession> {
+    if (typeof topicSlug !== 'string') {
+      console.warn('[DEBUG] topicSlug is not a string before saving session:', topicSlug);
+    } else {
+      console.log('[DEBUG] topicSlug before saving session:', topicSlug);
+    }
     const session: QuizSession = {
       id: uuidv4(),
-      topic,
+      topicSlug,
+      topicName,
       quiz,
       createdAt: new Date(),
       similarTopics
     };
-
     await this.saveSession(session);
     return session;
   }

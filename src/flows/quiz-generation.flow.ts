@@ -21,11 +21,16 @@ import { PromptBuilderAgent } from '../agents/prompt-builder.agent';
 import { QuizGeneratorAgent } from '../agents/quiz-generator.agent';
 import { QuizEvaluatorAgent } from '../agents/quiz-evaluator.agent';
 import { MemoryService } from '../services/memory.service';
-import { ModelConfigService } from '../services/model-config.service';
+import { ModelConfigService, AgentType } from '../services/model-config.service';
 import { ModelAdapterService } from '../services/model-adapter.service';
 import { ComprehensiveResearchFlow, ComprehensiveAnalysis } from './comprehensive-research.flow';
 import { v4 as uuidv4 } from 'uuid';
 import { PromptFeedback } from '../agents/prompt-builder.agent';
+import { ContextAnalyzer } from '../agents/context-analyzer.agent';
+import { CONTEXT_ANALYZER_PROMPT } from '../agents/prompts/context-analyzer.prompt';
+import { buildDynamicQuizPrompt, QUIZ_GENERATOR_TEMPLATE } from '../agents/prompts/quiz-generator.prompt';
+
+import { extractSlug } from '../agents/context-analyzer.agent';
 
 
 interface QuizGenerationOptions extends QuizGenerationConfig {
@@ -42,6 +47,7 @@ export class QuizGenerationFlow {
   private promptHistory: Map<string, string>;
   private quizEvaluator: QuizEvaluatorAgent;
   private comprehensiveResearch: ComprehensiveResearchFlow;
+  private contextAnalyzer: ContextAnalyzer;
 
   constructor(
     private readonly modelAdapterService: ModelAdapterService,
@@ -65,6 +71,8 @@ export class QuizGenerationFlow {
       this.modelAdapterService,
       serperApiKey
     );
+
+    this.contextAnalyzer = new ContextAnalyzer(this.modelConfigService, this.modelAdapterService);
   }
 
   private getDefaultConfig(): QuizGenerationConfig {
@@ -84,50 +92,65 @@ export class QuizGenerationFlow {
       maxAttempts: 3
     };
   }
-  async generateQuiz(topic: string, config: QuizGenerationConfig): Promise<Quiz> {
+  /**
+   * Generate a quiz by first classifying the user input topic to a topicSlug using AI, then generating the quiz for that slug.
+   * @param userInputTopic The topic as entered by the user (free-form)
+   * @param config Quiz generation config
+   * @param slugList Array of valid topic slugs
+   * @returns Quiz object with topicSlug and topicName
+   */
+  async generateQuiz(userInputTopic: string, config: QuizGenerationConfig, slugList: string[]): Promise<Quiz & { topicSlug: string; topicName: string }> {
     try {
+      // 1. Use AI to classify user input to topicSlug
+      const prompt = CONTEXT_ANALYZER_PROMPT
+        .replace("<user's topic input>", userInputTopic)
+        .replace("<list of available slugs>", slugList.join(', '));
+      const modelConfig = this.modelConfigService.getModelConfigForAgent(AgentType.CONTEXT_ANALYZER);
+      const response = await this.modelAdapterService.generateText({
+        ...modelConfig,
+        prompt,
+        maxTokens: 10,
+        temperature: 0.1,
+      });
+      const topicSlug = response.content.trim();
+      const topicName = userInputTopic.trim();
+
+      // 2. Generate quiz for topicSlug
       const options: QuizGenerationOptions = {
         ...config,
         difficulty: this.getDifficultyLevel(config),
         numberOfQuestions: config.multipleChoiceCount + config.codingQuestionCount,
-        topics: [topic],
+        topics: [topicSlug],
       };
 
-      // Thực hiện bước search web cho topic trước khi tạo quiz
+      // Web search and analysis for topicSlug
       const searchAnalysisAgent = this.comprehensiveResearch.getSearchAnalysisAgent();
-      const searchAnalysis = await searchAnalysisAgent.searchAndAnalyze(topic, {
+      const searchAnalysis = await searchAnalysisAgent.searchAndAnalyze(topicSlug, {
         searchResultLimit: 5,
         maxTokens: 1000,
         temperature: 0.3
       });
 
-      // Truyền kết quả searchAnalysis vào analysisResults khi tạo quiz
-      const mainQuiz = await this.quizGenerator.generate(topic, {
-        multipleChoiceCount: config.multipleChoiceCount,
-        codingQuestionCount: config.codingQuestionCount,
+      // Lấy context analysis (có similarTopics)
+      const contextAnalysis = await this.contextAnalyzer.analyzeContext(userInputTopic, topicSlug, slugList);
+      const safeTopicSlug = extractSlug(contextAnalysis.topicSlug);
+      const similarTopics = contextAnalysis.similarTopics;
+
+      // Tạo prompt chi tiết cho quiz
+      const quizPrompt = buildDynamicQuizPrompt(QUIZ_GENERATOR_TEMPLATE, {
+        topicSlug: safeTopicSlug,
         questionCount: config.multipleChoiceCount + config.codingQuestionCount,
-        difficulty: options.difficulty,
         difficultyDistribution: config.difficultyDistribution,
-        typeDistribution: config.typeDistribution,
         includeHints: config.includeHints,
-        maxAttempts: config.maxAttempts,
-        analysisResults: searchAnalysis ? {
-          mainSummary: searchAnalysis.mainSummary || '',
-          importantPoints: Array.isArray(searchAnalysis.importantPoints) ? searchAnalysis.importantPoints : [],
-          topicRelevanceScore: typeof searchAnalysis.topicRelevanceScore === 'number' ? searchAnalysis.topicRelevanceScore : 0,
-          sourceQuality: searchAnalysis.sourceQuality || { credibility: 0, recency: 0, diversity: 0 },
-          recommendations: Array.isArray(searchAnalysis.recommendations) ? searchAnalysis.recommendations : []
-        } : {
-          mainSummary: '',
-          importantPoints: [],
-          topicRelevanceScore: 0,
-          sourceQuality: { credibility: 0, recency: 0, diversity: 0 },
-          recommendations: []
-        }
       });
 
-      // Create final quiz
+      // Tạo quiz với prompt chi tiết
+      const mainQuiz = await this.quizGenerator.generate(safeTopicSlug, {
+        ...config
+      }, quizPrompt);
+
       const finalQuiz = {
+        ...mainQuiz,
         id: uuidv4(),
         questions: this.convertQuestions(mainQuiz.questions),
         createdAt: new Date(),
@@ -144,38 +167,14 @@ export class QuizGenerationFlow {
           totalQuestions: options.numberOfQuestions,
           generatedAt: new Date().toISOString(),
           estimatedTime: 30
-        }
-      } as Quiz;
+        },
+        topicSlug: safeTopicSlug,
+        topicName,
+        similarTopics // Lưu vào quiz
+      };
 
-      // Evaluate the quiz (BỎ QUA để tăng tốc độ tạo quiz)
-      // console.log('\n🔍 Starting Quiz Evaluation...');
-      // const quizEvaluation = await this.evaluateQuiz(finalQuiz, topic);
-      // console.log('\n📊 Quiz Evaluation Results:');
-      // console.log(`Overall Score: ${quizEvaluation.score.toFixed(2)}`);
-      // console.log('Feedback Categories:');
-      // console.log(`- Coverage: ${quizEvaluation.feedback.coverage.toFixed(2)}`);
-      // console.log(`- Difficulty Balance: ${quizEvaluation.feedback.difficulty.toFixed(2)}`);
-      // console.log(`- Clarity: ${quizEvaluation.feedback.clarity.toFixed(2)}`);
-      // console.log(`- Quality: ${quizEvaluation.feedback.quality.toFixed(2)}`);
-      // if (quizEvaluation.issues.length > 0) {
-      //   console.log('\n⚠️ Issues Found:');
-      //   quizEvaluation.issues.forEach(issue => {
-      //     console.log(`- [${issue.severity.toUpperCase()}] ${issue.description}`);
-      //   });
-      // }
-      // if (quizEvaluation.suggestions.length > 0) {
-      //   console.log('\n💡 Suggestions for Improvement:');
-      //   quizEvaluation.suggestions.forEach(suggestion => {
-      //     console.log(`- ${suggestion}`);
-      //   });
-      // }
-
-      // Save the quiz
       await this.memory.saveQuiz(finalQuiz);
-
-      // Save the session (không cần evaluation)
-      await this.saveQuizSession(finalQuiz, topic, {}, undefined);
-
+      await this.saveQuizSession(finalQuiz, safeTopicSlug, { suggestedTopics: similarTopics, similarTopics }, undefined);
       return finalQuiz;
     } catch (error) {
       console.error('Error in quiz generation flow:', error);
