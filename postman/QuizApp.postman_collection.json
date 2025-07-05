@@ -96,6 +96,48 @@
 			"name": "Quizzes",
 			"item": [
 				{
+					"name": "Create Quiz (Physics)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.collectionVariables.set(\"quizId\", jsonData.id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"topic\": \"physics\",\n  \"difficulty\": \"basic\",\n  \"numQuestions\": 5,\n  \"userId\": \"{{userId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/quizzes/create",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"quizzes",
+								"create"
+							]
+						}
+					},
+					"response": []
+				},
+				{
 					"name": "Create Quiz",
 					"event": [
 						{
@@ -159,6 +201,25 @@
 							"path": [
 								"quizzes",
 								"submit-result"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Recommended Quizzes",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/quizzes/recommended/{{userId}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"quizzes",
+								"recommended",
+								"{{userId}}"
 							]
 						}
 					},

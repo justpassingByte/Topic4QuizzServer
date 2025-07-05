@@ -264,7 +264,8 @@ export class MemoryService {
   async createSession(topic: string, quiz: Quiz, similarTopics: string[] = []): Promise<QuizSession> {
     const session: QuizSession = {
       id: uuidv4(),
-      topic,
+      topicSlug: quiz.topicSlug || topic,
+      topicName: quiz.topicName || topic,
       quiz,
       createdAt: new Date(),
       similarTopics
@@ -800,10 +801,11 @@ export class MemoryService {
     // Calculate topic performance
     const topicPerformance: UserStatistics['topicPerformance'] = {};
     
-    // Group by topic
+    // Group by topicSlug
     results.forEach(result => {
-      if (!topicPerformance[result.topic]) {
-        topicPerformance[result.topic] = {
+      if (!topicPerformance[result.topicSlug]) {
+        topicPerformance[result.topicSlug] = {
+          topic: result.topicName || result.topicSlug,
           completed: 0,
           averageScore: 0,
           strengths: [],
@@ -811,11 +813,11 @@ export class MemoryService {
         };
       }
       
-      topicPerformance[result.topic].completed += 1;
-      const topicScores = topicPerformance[result.topic];
-      const currentTotal = topicScores.averageScore * (topicPerformance[result.topic].completed - 1);
-      topicPerformance[result.topic].averageScore = 
-        (currentTotal + result.score) / topicPerformance[result.topic].completed;
+      topicPerformance[result.topicSlug].completed += 1;
+      const topicScores = topicPerformance[result.topicSlug];
+      const currentTotal = topicScores.averageScore * (topicPerformance[result.topicSlug].completed - 1);
+      topicPerformance[result.topicSlug].averageScore = 
+        (currentTotal + result.score) / topicPerformance[result.topicSlug].completed;
     });
     
     // Determine strengths and weaknesses for each topic

@@ -45,19 +45,29 @@ export class QuizGeneratorAgent {
       explanation: question.explanation
     };
 
-    if (question.type === 'multiple-choice' && question.choices) {
-      const choices: Choice[] = question.choices.map((choice, index) => ({
-        id: uuidv4(),
-        text: choice,
-        isCorrect: typeof question.correctAnswer === 'number' 
-          ? index === question.correctAnswer 
-          : index === question.correctIndex
-      }));
-
+    if (question.type === 'multiple-choice') {
+      let answers = [];
+      if (Array.isArray((question as any).options)) {
+        answers = (question as any).options.map((opt: string, idx: number) => ({
+          id: `${baseQuestion.id}_${idx}`,
+          text: opt,
+          correct: (typeof (question as any).correctAnswer === 'number')
+            ? idx === (question as any).correctAnswer
+            : idx === (question as any).correctIndex
+        }));
+      } else if (Array.isArray(question.choices)) {
+        answers = question.choices.map((choice, index) => ({
+          id: `${baseQuestion.id}_${index}`,
+          text: choice,
+          correct: typeof question.correctAnswer === 'number'
+            ? index === question.correctAnswer
+            : index === question.correctIndex
+        }));
+      }
       const mcQuestion: MultipleChoiceQuestion = {
         ...baseQuestion,
         type: 'multiple-choice',
-        choices
+        answers
       };
       return mcQuestion;
     } else {
@@ -72,7 +82,7 @@ export class QuizGeneratorAgent {
     }
   }
 
-  async generate(topic: string, config: QuizGenerationConfig): Promise<Quiz> {
+  async generate(topic: string, config: QuizGenerationConfig, prompt?: string): Promise<Quiz> {
     if (!topic || typeof topic !== 'string') {
       throw new Error('Invalid topic provided');
     }
@@ -82,32 +92,35 @@ export class QuizGeneratorAgent {
     }
 
     try {
-      const promptResult = await this.promptBuilder.buildQuizPrompt(topic, {
-        questionCount: config.questionCount || (config.multipleChoiceCount + config.codingQuestionCount),
-        difficultyDistribution: {
-          basic: config.difficultyDistribution.basic,
-          intermediate: config.difficultyDistribution.intermediate,
-          advanced: config.difficultyDistribution.advanced
-        },
-        typeDistribution: {
-          multipleChoice: config.typeDistribution.multipleChoice,
-          coding: config.typeDistribution.coding
-        },
-        includeHints: config.includeHints,
-        analysisResults: config.analysisResults ? {
-          mainSummary: config.analysisResults.mainSummary ?? '',
-          importantPoints: config.analysisResults.importantPoints ?? [],
-          topicRelevanceScore: config.analysisResults.topicRelevanceScore ?? 0,
-          sourceQuality: config.analysisResults.sourceQuality ?? {
-            credibility: 0,
-            recency: 0,
-            diversity: 0
+      let quizPrompt = prompt;
+      if (!quizPrompt) {
+        const promptResult = await this.promptBuilder.buildQuizPrompt(topic, {
+          questionCount: config.questionCount || (config.multipleChoiceCount + config.codingQuestionCount),
+          difficultyDistribution: {
+            basic: config.difficultyDistribution.basic,
+            intermediate: config.difficultyDistribution.intermediate,
+            advanced: config.difficultyDistribution.advanced
           },
-          recommendations: config.analysisResults.recommendations ?? []
-        } : undefined
-      });
-
-      this.lastGeneratedPrompt = promptResult.prompt;
+          typeDistribution: {
+            multipleChoice: config.typeDistribution.multipleChoice,
+            coding: config.typeDistribution.coding
+          },
+          includeHints: config.includeHints,
+          analysisResults: config.analysisResults ? {
+            mainSummary: config.analysisResults.mainSummary ?? '',
+            importantPoints: config.analysisResults.importantPoints ?? [],
+            topicRelevanceScore: config.analysisResults.topicRelevanceScore ?? 0,
+            sourceQuality: config.analysisResults.sourceQuality ?? {
+              credibility: 0,
+              recency: 0,
+              diversity: 0
+            },
+            recommendations: config.analysisResults.recommendations ?? []
+          } : undefined
+        });
+        quizPrompt = promptResult.prompt;
+      }
+      this.lastGeneratedPrompt = quizPrompt;
       // console.log('Generated quiz prompt:', this.lastGeneratedPrompt);
 
       const modelConfig = this.modelConfigService.getModelConfigForAgent(AgentType.QUIZ_GENERATOR);
@@ -149,7 +162,7 @@ Return ONLY valid JSON, no additional text or markdown.`;
 
       const response = await this.modelAdapterService.generateText({
         ...modelConfig,
-        prompt: formattedPrompt,
+        prompt: quizPrompt,
         maxTokens: 3000,
         temperature: 0.7
       });

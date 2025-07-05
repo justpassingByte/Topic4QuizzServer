@@ -17,7 +17,8 @@ export interface QuizResult {
   userId: string;
   quizId: string;
   score: number;
-  topic: string;
+  topicSlug: string;
+  topicName: string;
   difficulty: 'basic' | 'intermediate' | 'advanced';
   completedAt: Date;
   answers: Array<{
@@ -32,7 +33,8 @@ export interface UserStatistics {
   totalQuizzesCompleted: number;
   averageScore: number;
   topicPerformance: {
-    [topic: string]: {
+    [topicSlug: string]: {
+      topic: string;
       completed: number;
       averageScore: number;
       strengths: string[];
