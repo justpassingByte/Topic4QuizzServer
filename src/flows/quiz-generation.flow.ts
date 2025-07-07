@@ -139,7 +139,9 @@ export class QuizGenerationFlow {
       // Tạo prompt chi tiết cho quiz
       const quizPrompt = buildDynamicQuizPrompt(QUIZ_GENERATOR_TEMPLATE, {
         topicSlug: safeTopicSlug,
-        questionCount: config.multipleChoiceCount + config.codingQuestionCount,
+        topic: topicName,
+        category: safeTopicSlug,
+        questionCount: config.multipleChoiceCount,
         difficultyDistribution: config.difficultyDistribution,
         includeHints: config.includeHints,
       });

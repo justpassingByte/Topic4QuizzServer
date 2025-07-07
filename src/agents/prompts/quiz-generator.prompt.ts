@@ -84,6 +84,8 @@ export function buildDynamicQuizPrompt(
   template: QuizGeneratorTemplate,
   config: {
     topicSlug: string;
+    topic?: string;
+    category?: string;
     questionCount?: number;
     difficultyDistribution?: {
       basic?: number;
@@ -101,6 +103,8 @@ export function buildDynamicQuizPrompt(
 ): string {
   const {
     topicSlug,
+    topic,
+    category,
     questionCount = 10,
     difficultyDistribution = {
       basic: 0.4,
@@ -114,8 +118,16 @@ export function buildDynamicQuizPrompt(
 
   let prompt = template.base;
 
-  // Add topic slug and question count
-  prompt += `\n\nMain Topic: ${topicSlug}\nNumber of Questions: ${questionCount}`;
+  // Add topic (ý định user) và category (concept rộng)
+  if (topic) {
+    prompt += `\n\nMain Topic: ${topic}`;
+    if (category) {
+      prompt += `\nCategory: ${category}`;
+    }
+  } else {
+    prompt += `\n\nMain Topic: ${topicSlug}`;
+  }
+  prompt += `\nNumber of Questions: ${questionCount}`;
 
   // Add difficulty distribution
   prompt += `\n\nDifficulty Distribution: basic ${Math.round((difficultyDistribution.basic || 0.4) * 100)}%, intermediate ${Math.round((difficultyDistribution.intermediate || 0.4) * 100)}%, advanced ${Math.round((difficultyDistribution.advanced || 0.2) * 100)}%`;

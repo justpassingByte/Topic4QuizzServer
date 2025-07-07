@@ -57,7 +57,7 @@ export class QuizController {
   // Create a new quiz
   createQuiz = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { topic: userInputTopic, difficulty, numQuestions = 10, userId } = req.body;
+      const { topic: userInputTopic, difficulty, config, userId } = req.body;
 
       // Validate topic
       if (!userInputTopic || typeof userInputTopic !== 'string') {
@@ -75,22 +75,34 @@ export class QuizController {
         }
       }
 
-      // Create config object
-      const config: QuizGenerationConfig = {
-        multipleChoiceCount: numQuestions,
-        codingQuestionCount: 0,
-        difficultyDistribution: {
-          basic: finalDifficulty === 'basic' ? 7 : 2,
-          intermediate: finalDifficulty === 'intermediate' ? 7 : 2,
-          advanced: finalDifficulty === 'advanced' ? 7 : 2
-        },
-        typeDistribution: {
-          multipleChoice: 1,
-          coding: 0
-        },
-        includeHints: true,
-        maxAttempts: 3
-      };
+      let finalConfig: QuizGenerationConfig;
+      if (config) {
+        finalConfig = {
+          multipleChoiceCount: config.multipleChoiceCount ?? 5,
+          codingQuestionCount: 0,
+          difficultyDistribution: config.difficultyDistribution ?? {
+            basic: finalDifficulty === 'basic' ? 7 : 2,
+            intermediate: finalDifficulty === 'intermediate' ? 7 : 2,
+            advanced: finalDifficulty === 'advanced' ? 7 : 2
+          },
+          typeDistribution: { multipleChoice: 1, coding: 0 },
+          includeHints: config.includeHints ?? true,
+          maxAttempts: config.maxAttempts ?? 3
+        };
+      } else {
+        finalConfig = {
+          multipleChoiceCount: 10,
+          codingQuestionCount: 0,
+          difficultyDistribution: {
+            basic: finalDifficulty === 'basic' ? 7 : 2,
+            intermediate: finalDifficulty === 'intermediate' ? 7 : 2,
+            advanced: finalDifficulty === 'advanced' ? 7 : 2
+          },
+          typeDistribution: { multipleChoice: 1, coding: 0 },
+          includeHints: true,
+          maxAttempts: 3
+        };
+      }
 
       // Danh sách slug đầy đủ, đồng bộ với frontend
       const slugList = [
@@ -113,7 +125,7 @@ export class QuizController {
       ];
 
       // Use the new flow: classify user input to slug, then generate quiz
-      const quiz = await this.flow.generateQuiz(userInputTopic, config, slugList);
+      const quiz = await this.flow.generateQuiz(userInputTopic, finalConfig, slugList);
       const { topicSlug, topicName } = quiz;
 
       // Create a session, using the standardized slug and display name
