@@ -463,4 +463,35 @@ export class UserService extends DatabaseService {
       difficulty: 'intermediate'
     }));
   }
+
+  async updateUserAvatar(userId: string, avatarPath: string): Promise<void> {
+    await this.ensureConnection();
+    await this.withRetry(() =>
+      this.usersCollection.updateOne(
+        { id: userId },
+        { $set: { avatar: avatarPath, updatedAt: new Date() } }
+      )
+    );
+  }
+
+  async updateUser(userId: string, updates: Partial<User>): Promise<User | null> {
+    await this.ensureConnection();
+    const allowedFields: (keyof User)[] = ['username', 'email', 'firstName', 'lastName', 'dateOfBirth', 'avatar'];
+    const setObj: any = { updatedAt: new Date() };
+    for (const key of allowedFields) {
+      if (updates[key] !== undefined) {
+        setObj[key] = updates[key];
+      }
+    }
+    console.log('DEBUG updateUser - userId:', userId);
+    console.log('DEBUG updateUser - updates:', updates);
+    console.log('DEBUG updateUser - setObj:', setObj);
+    await this.withRetry(() =>
+      this.usersCollection.updateOne(
+        { id: userId },
+        { $set: setObj }
+      )
+    );
+    return this.getUserById(userId);
+  }
 } 

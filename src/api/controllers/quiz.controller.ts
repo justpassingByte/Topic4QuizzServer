@@ -429,7 +429,7 @@ export class QuizController {
 
   submitResult = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { quizId, userId, answers } = req.body;
+      const { quizId, userId, answers, totalTime } = req.body;
       if (!quizId || !userId || !answers) {
         res.status(400).json({ error: 'Quiz ID, User ID, and answers are required' });
         return;
@@ -454,8 +454,10 @@ export class QuizController {
       quiz.questions.forEach((question: any) => {
         const userAnswerData = answers.find((a: any) => a.questionId === question.id);
         const userAnswer = userAnswerData?.userAnswer;
+        const timeTaken = userAnswerData?.timeTaken;
+        const difficulty = userAnswerData?.difficulty || question.difficulty || 'intermediate';
         let isCorrect = false;
-        if (userAnswer !== undefined) {
+        if (userAnswer !== undefined && userAnswer !== null) {
           if (question.type === 'multiple-choice') {
             const mcq = question;
             const correctOption = mcq.answers?.find((o: { id: string; text: string; correct: boolean }) => o.correct);
@@ -468,13 +470,31 @@ export class QuizController {
             }
           }
         }
+        // Scoring by difficulty and time
+        let maxPoints = 10;
+        if (difficulty === 'basic') maxPoints = 5;
+        else if (difficulty === 'intermediate') maxPoints = 10;
+        else if (difficulty === 'advanced') maxPoints = 15;
+        let timeMultiplier = 0;
         if (isCorrect) {
-          score += 10;
+          if (typeof timeTaken === 'number') {
+            if (timeTaken <= 3) timeMultiplier = 1.0;
+            else if (timeTaken <= 7) timeMultiplier = 0.8;
+            else if (timeTaken <= 10) timeMultiplier = 0.6;
+            else timeMultiplier = 0;
+          } else {
+            timeMultiplier = 0;
+          }
         }
+        const questionScore = isCorrect ? Math.round(maxPoints * timeMultiplier) : 0;
+        score += questionScore;
         processedAnswers.push({
           questionId: question.id,
           userAnswer: userAnswer,
           correct: isCorrect,
+          timeTaken,
+          difficulty,
+          questionScore,
         });
       });
       // Save quiz result with server-calculated score
@@ -492,6 +512,25 @@ export class QuizController {
       await this.userService.updateUserScore(userId, score);
       const updatedUser = await this.userService.getUserById(userId);
       const suggestedTopics = ["React Hooks", "State Management", "React Router"];
+      // Lấy danh sách quiz liên quan cùng topicSlug (trừ quiz vừa làm)
+      let relatedQuizzes: any[] = [];
+      if (topicSlug) {
+        const sessions = await this.quizService.getSessionsByTopic(topicSlug);
+        if (sessions && Array.isArray(sessions)) {
+          relatedQuizzes = sessions
+            .filter(session => session.id !== quizId)
+            .map(session => ({
+              id: session.id,
+              topicSlug: session.topicSlug,
+              topicName: session.topicName,
+              questionCount: session.quiz?.questions?.length || 0,
+              createdAt: session.createdAt || new Date(),
+              updatedAt: session.updatedAt,
+              score: session.evaluation?.score,
+              similarTopics: session.similarTopics || []
+            }));
+        }
+      }
       res.status(200).json({
         message: "Quiz submitted successfully",
         score,
@@ -500,7 +539,10 @@ export class QuizController {
         coinsEarned: score,
         xpEarned: score,
         suggestedTopics,
+        relatedQuizzes,
         newTotalScore: updatedUser?.score ?? (updatedUser?.score ?? 0) + score,
+        totalTime: totalTime || null,
+        answers: processedAnswers,
       });
     } catch (error) {
       if (error instanceof Error) {

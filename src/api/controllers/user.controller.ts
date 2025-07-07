@@ -4,6 +4,7 @@ import { User, QuizResult, UserStatistics } from '../../models/user.model';
 import { v4 as uuidv4 } from 'uuid';
 import { UserService } from '../../services/user.service';
 import { Quiz, QuizSession } from '../../models/quiz.model';
+import path from 'path';
 
 export class UserController {
   private userService: UserService;
@@ -257,4 +258,45 @@ export class UserController {
       res.status(500).json({ error: 'Failed to fetch leaderboard' });
     }
   };
+
+  // Upload avatar
+  uploadAvatar = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      if (!req.file) {
+        res.status(400).json({ error: 'No file uploaded' });
+        return;
+      }
+      // Save file path to user profile (relative path)
+      let avatarPath = path.join('uploads/avatars', req.file.filename);
+      avatarPath = avatarPath.replace(/\\/g, '/');
+      // Update user avatar in DB (implement updateUserAvatar in userService)
+      await this.userService.updateUserAvatar(id, avatarPath);
+      res.status(200).json({ message: 'Avatar uploaded successfully', avatar: avatarPath });
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+      res.status(500).json({ error: 'Failed to upload avatar' });
+    }
+  };
+
+  updateUser = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      if (!id) {
+        res.status(400).json({ error: 'User ID is required' });
+        return;
+      }
+      const updates = req.body;
+      const updatedUser = await this.userService.updateUser(id, updates);
+      if (!updatedUser) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+      const { password: _, ...userWithoutPassword } = updatedUser;
+      res.status(200).json(userWithoutPassword);
+    } catch (error) {
+      console.error('Error updating user:', error);
+      res.status(500).json({ error: 'Failed to update user' });
+    }
+  }
 } 

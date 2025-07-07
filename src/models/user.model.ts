@@ -2,6 +2,10 @@ export interface User {
   id: string;
   username: string;
   email: string;
+  firstName?: string;
+  lastName?: string;
+  dateOfBirth?: string;
+  avatar?: string;
   password?: string;
   score?: number;
   preferences: {
@@ -26,6 +30,8 @@ export interface QuizResult {
     userAnswer: any;
     correct: boolean;
     timeTaken?: number;
+    difficulty?: 'basic' | 'intermediate' | 'advanced';
+    questionScore?: number;
   }>;
 }
 
